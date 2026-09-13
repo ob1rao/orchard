@@ -115,8 +115,9 @@ If you report an issue, include the output of `uname -m`, `getconf LONG_BIT`,
 | Parent directory | Left, h, Backspace, right-click, or click path bar |
 | Return to scan root | g |
 | Move through list | Mouse wheel, Page Up/Down, Home/End |
+| View selected file / start at end | v / t |
 | Filter current directory | / then type; Enter applies, Esc clears |
-| Search recursively across scanned disk | Ctrl-F |
+| Search recursively across scanned disk | f or Ctrl-F |
 | Show/hide hidden files and directories (default: shown) | . or H |
 | Toggle allocated/apparent bytes | a |
 | Stop scan; keep partial results | s |
@@ -147,9 +148,39 @@ and directory totals still include hidden data. A name filter limits both
 the list and the map; the directory total still represents the whole directory.
 The map can rearrange during scanning as sizes become known.
 
+## View file contents
+
+Select a regular text file in a directory, then press **v** to open its contents
+or **t** to start on the final page. This works for logs, configs, READMEs, and
+other text files regardless of their extension. To view a search result, first
+press Enter to reveal it in the directory, then press v or t.
+
+| Viewer action | Control |
+| --- | --- |
+| Scroll | Up/Down, j/k, or mouse wheel |
+| Previous / next page | Page Up/Down, b/Space |
+| Start / end | Home/End, g/G, or v/t |
+| Pan long lines | Left/Right or h/l |
+| Refresh contents | r |
+| Return to the selected file | Esc, q, or right-click |
+| Open disk search | f or Ctrl-F |
+
+`t` starts at the end; it does **not** automatically follow new writes. Press
+`r` to refresh; if you were at the end, the viewer stays at the new end. File
+rotation requires closing and reopening the viewer because it keeps the same
+open file descriptor. The viewer is read-only and never launches a shell or editor.
+
+Pages are limited to 256 KiB and 512 rows, and very long lines are split into
+16 KiB segments. The viewer seeks backwards for the final page, avoiding a full
+read or line index even for large logs. Positions are shown as byte offsets.
+Tabs display as four spaces; terminal controls and invalid UTF-8 are replaced
+for display. NUL-containing binary data, symlinks, directories, and special
+files are rejected. Permissions still apply. In-flight reads on a stalled
+filesystem can delay navigation.
+
 ## Recursive search and dates
 
-Press **Ctrl-F** from a directory view to search all discovered files and
+Press **f** or **Ctrl-F** from a directory view to search all discovered files and
 folders under the selected scan root. Searching uses the in-memory index and
 continues to refresh while the disk is being scanned; it does not reread files.
 The current directory's `/` filter does not limit recursive search.

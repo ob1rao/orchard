@@ -49,6 +49,7 @@ type App struct {
 	find                           *findState
 	findResults                    chan findUpdate
 	findSerial                     uint64
+	viewer                         *fileView
 }
 
 func Run(ctx context.Context, path string, apparent bool, opt scan.Options) error {
@@ -115,6 +116,7 @@ func Run(ctx context.Context, path string, apparent bool, opt scan.Options) erro
 	}
 }
 func (a *App) stop() {
+	a.closeViewer()
 	a.closeFind()
 	if a.cancel != nil {
 		a.cancel()
@@ -197,6 +199,10 @@ func (a *App) key(ctx context.Context, e *tcell.EventKey) bool {
 	if e.Key() == tcell.KeyCtrlC {
 		return true
 	}
+	if a.viewer != nil {
+		a.viewerKey(e)
+		return false
+	}
 	if a.help {
 		a.help = false
 		return false
@@ -273,6 +279,12 @@ func (a *App) key(ctx context.Context, e *tcell.EventKey) bool {
 		a.screen.Sync()
 	case tcell.KeyRune:
 		switch e.Str() {
+		case "f":
+			if !a.picker {
+				a.openFind()
+			}
+		case "v", "t":
+			a.openViewer(e.Str() == "t")
 		case "q":
 			return true
 		case "?":
@@ -334,6 +346,10 @@ func (a *App) key(ctx context.Context, e *tcell.EventKey) bool {
 	return false
 }
 func (a *App) mouse(ctx context.Context, e *tcell.EventMouse) {
+	if a.viewer != nil {
+		a.viewerMouse(e)
+		return
+	}
 	if a.find != nil {
 		a.findMouse(e)
 		return
@@ -454,7 +470,9 @@ func (a *App) draw() {
 		return
 	}
 	a.text(2, 0, w-4, "ORCHARD  /  see where your space goes", base.Foreground(accent).Bold(true))
-	if a.find != nil {
+	if a.viewer != nil {
+		a.drawViewer(w, h)
+	} else if a.find != nil {
 		a.drawFind(w, h)
 	} else if a.picker {
 		a.drawPicker(w, h)
@@ -613,7 +631,7 @@ func (a *App) drawTree(w, h int) {
 		status = fmt.Sprintf("Hidden: %s (.) · Filter: /%s (Esc clears)", hidden, a.filter)
 	}
 	a.text(2, h-3, w-4, status, base.Foreground(muted))
-	a.text(2, h-2, w-4, "↑↓ select · Enter / double-click open · ← back · Ctrl-F search · . hidden · / filter · ? help · q quit", base.Foreground(accent))
+	a.text(2, h-2, w-4, "↑↓ select · Enter / double-click open · ← back · f find · v view · t tail · . hidden · ? help · q quit", base.Foreground(accent))
 }
 func (a *App) drawTile(t treemap.Tile, e scan.Entry, selected bool) {
 	key := strings.ToLower(filepath.Ext(e.Name))
@@ -664,7 +682,7 @@ func (a *App) drawTile(t treemap.Tile, e scan.Entry, selected bool) {
 }
 func (a *App) drawHelp(w, h int) {
 	a.screen.FillArea(1, 1, w-2, h-2, ' ', base)
-	lines := []string{"KEYBOARD & MOUSE", "", "↑/↓ or j/k   Select an entry; wheel scrolls", "Enter / l   Open selected directory", "← / h / Backspace   Parent directory", "g   Return to the scan root", "Click   Select tile or list entry", "Double-click   Open directory; right-click goes back", "/   Filter current directory     Ctrl-F   Search scanned disk", ". / H   Show or hide dotfiles and dot directories (default: shown)", "a   Toggle allocated bytes / apparent file sizes", "s   Stop scan and browse partial results", "r   Rescan disk     d   Choose another disk", "Home / End / PgUp / PgDn   Navigate the list", "q / Ctrl-C   Quit     Ctrl-L   Redraw", "", "Tiles represent immediate children, ordered by size.", "Directories open into another treemap. Tiny entries stay in the list.", "Symlinks are not followed; other filesystems are skipped.", "Hard links count once; filesystem overhead/free space is not mapped.", "", "Press any key to close"}
+	lines := []string{"KEYBOARD & MOUSE", "", "↑/↓ or j/k   Select an entry; wheel scrolls", "Enter / l   Open selected directory", "← / h / Backspace   Parent directory", "g   Return to the scan root", "Click   Select tile or list entry", "Double-click   Open directory; right-click goes back", "/   Filter current directory     f / Ctrl-F   Search disk", ". / H   Show or hide dotfiles and dot directories (default: shown)", "v   View selected file     t   View from the end (no follow)", "a   Toggle allocated bytes / apparent file sizes", "s   Stop scan and browse partial results", "r   Rescan disk     d   Choose another disk", "Home / End / PgUp / PgDn   Navigate the list", "q / Ctrl-C   Quit     Ctrl-L   Redraw", "", "Tiles represent immediate children, ordered by size.", "Directories open into another treemap. Tiny entries stay in the list.", "Symlinks are not followed; other filesystems are skipped.", "Hard links count once; filesystem overhead/free space is not mapped.", "", "Press any key to close"}
 	for i, line := range lines {
 		if i+2 >= h-2 {
 			break

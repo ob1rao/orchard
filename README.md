@@ -37,7 +37,8 @@ To scan a particular folder:
 | Select / scroll | ↑ ↓ or mouse wheel |
 | Open directory | Enter or double-click |
 | Go back | Backspace or right-click |
-| Search the disk | Ctrl-F; Tab toggles regex |
+| Search the disk | f or Ctrl-F; Tab toggles regex |
+| View selected file / start at end | v / t |
 | Filter this directory | / |
 | Show / hide dotfiles | . |
 | Help / quit | ? / q |

@@ -46,6 +46,9 @@ type App struct {
 	lastNode                       *scan.Node
 	lastClick                      time.Time
 	mouseDown                      bool
+	find                           *findState
+	findResults                    chan findUpdate
+	findSerial                     uint64
 }
 
 func Run(ctx context.Context, path string, apparent bool, opt scan.Options) error {
@@ -78,9 +81,19 @@ func Run(ctx context.Context, path string, apparent bool, opt scan.Options) erro
 		select {
 		case <-ctx.Done():
 			return nil
+		case update := <-a.findResults:
+			a.acceptFind(update)
+			a.draw()
 		case <-tick.C:
+			redraw := false
 			if a.tree != nil && !a.view.Stats.Done {
 				a.refresh()
+				redraw = true
+			}
+			if a.pollFind() {
+				redraw = true
+			}
+			if redraw {
 				a.draw()
 			}
 		case ev, ok := <-s.EventQ():
@@ -102,6 +115,7 @@ func Run(ctx context.Context, path string, apparent bool, opt scan.Options) erro
 	}
 }
 func (a *App) stop() {
+	a.closeFind()
 	if a.cancel != nil {
 		a.cancel()
 		<-a.done
@@ -169,6 +183,10 @@ func (a *App) back() {
 	}
 }
 func (a *App) move(delta int) {
+	if a.find != nil {
+		a.find.selected = max(0, min(len(a.find.entries)-1, a.find.selected+delta))
+		return
+	}
 	if a.picker {
 		a.disk = max(0, min(len(a.volumes)-1, a.disk+delta))
 	} else {
@@ -181,6 +199,10 @@ func (a *App) key(ctx context.Context, e *tcell.EventKey) bool {
 	}
 	if a.help {
 		a.help = false
+		return false
+	}
+	if a.find != nil {
+		a.findKey(e)
 		return false
 	}
 	if a.searching {
@@ -204,6 +226,10 @@ func (a *App) key(ctx context.Context, e *tcell.EventKey) bool {
 		return false
 	}
 	switch e.Key() {
+	case tcell.KeyCtrlF:
+		if !a.picker {
+			a.openFind()
+		}
 	case tcell.KeyEscape:
 		if a.filter != "" {
 			a.filter = ""
@@ -308,6 +334,10 @@ func (a *App) key(ctx context.Context, e *tcell.EventKey) bool {
 	return false
 }
 func (a *App) mouse(ctx context.Context, e *tcell.EventMouse) {
+	if a.find != nil {
+		a.findMouse(e)
+		return
+	}
 	if a.help || a.searching {
 		return
 	}
@@ -424,7 +454,9 @@ func (a *App) draw() {
 		return
 	}
 	a.text(2, 0, w-4, "ORCHARD  /  see where your space goes", base.Foreground(accent).Bold(true))
-	if a.picker {
+	if a.find != nil {
+		a.drawFind(w, h)
+	} else if a.picker {
 		a.drawPicker(w, h)
 	} else {
 		a.drawTree(w, h)
@@ -488,10 +520,23 @@ func (a *App) drawTree(w, h int) {
 	rate := float64(st.Files+st.Directories) / max(0.001, st.Elapsed.Seconds())
 	a.text(2, 3, w-4, fmt.Sprintf("%s  ·  %s %s  ·  %d files / %d dirs  ·  %.0f entries/s  ·  %s", state, Bytes(a.view.Size), mode, st.Files, st.Directories, rate, st.Elapsed.Round(time.Millisecond)), base.Foreground(accent))
 	a.listWidth = min(44, max(26, w/3))
+	dateColumns := w >= 150
+	if dateColumns {
+		a.listWidth = min(80, w/2)
+	}
+	nameWidth, sizeX := a.listWidth-15, a.listWidth-12
+	if dateColumns {
+		nameWidth -= 24
+		sizeX -= 24
+	}
 	a.listTop = 6
-	a.listHeight = h - 12
-	a.text(2, 5, a.listWidth-15, fmt.Sprintf("CONTENTS %d", len(a.entries)), base.Foreground(muted).Bold(true))
-	a.text(a.listWidth-12, 5, 10, "      SIZE", base.Foreground(muted).Bold(true))
+	a.listHeight = h - 14
+	a.text(2, 5, nameWidth, fmt.Sprintf("CONTENTS %d", len(a.entries)), base.Foreground(muted).Bold(true))
+	a.text(sizeX, 5, 10, "      SIZE", base.Foreground(muted).Bold(true))
+	if dateColumns {
+		a.text(a.listWidth-24, 5, 10, "MODIFIED", base.Foreground(muted))
+		a.text(a.listWidth-12, 5, 10, "CREATED", base.Foreground(muted))
+	}
 	title := "SPACE MAP"
 	if a.filter != "" || a.hideHidden {
 		title += " · filtered"
@@ -516,8 +561,12 @@ func (a *App) drawTree(w, h int) {
 			name += "/"
 		}
 		size := Bytes(e.Size)
-		a.text(2, a.listTop+row, a.listWidth-15, name, style)
-		a.text(a.listWidth-12, a.listTop+row, 10, fmt.Sprintf("%10s", size), style)
+		a.text(2, a.listTop+row, nameWidth, name, style)
+		a.text(sizeX, a.listTop+row, 10, fmt.Sprintf("%10s", size), style)
+		if dateColumns {
+			a.text(a.listWidth-24, a.listTop+row, 10, date(e.Node.Modified), style)
+			a.text(a.listWidth-12, a.listTop+row, 10, createdDate(e.Node), style)
+		}
 	}
 	weights := make([]uint64, len(a.entries))
 	for i, e := range a.entries {
@@ -539,7 +588,10 @@ func (a *App) drawTree(w, h int) {
 	}
 	if len(a.entries) > 0 {
 		e := a.entries[a.selected]
-		a.text(2, h-5, w-4, fmt.Sprintf("%s  ·  %s  ·  %.2f%% of this directory", e.Node.Path(), Bytes(e.Size), percent(e.Size, a.view.Size)), base.Bold(true))
+		a.text(2, h-7, w-4, fmt.Sprintf("%s  ·  %s  ·  %.2f%% of this directory", e.Node.Path(), Bytes(e.Size), percent(e.Size, a.view.Size)), base.Bold(true))
+		a.drawDates(e.Node, w, h)
+	} else {
+		a.drawDates(a.current, w, h)
 	}
 	detail := fmt.Sprintf("%d unreadable  ·  %d mount/duplicate dirs skipped  ·  %d hard links deduplicated", st.Errors, st.Skipped, st.Hardlinks)
 	if a.notice != "" {
@@ -561,7 +613,7 @@ func (a *App) drawTree(w, h int) {
 		status = fmt.Sprintf("Hidden: %s (.) · Filter: /%s (Esc clears)", hidden, a.filter)
 	}
 	a.text(2, h-3, w-4, status, base.Foreground(muted))
-	a.text(2, h-2, w-4, "↑↓ select · Enter / double-click open · ← back · . hidden · / filter · d disks · ? help · q quit", base.Foreground(accent))
+	a.text(2, h-2, w-4, "↑↓ select · Enter / double-click open · ← back · Ctrl-F search · . hidden · / filter · ? help · q quit", base.Foreground(accent))
 }
 func (a *App) drawTile(t treemap.Tile, e scan.Entry, selected bool) {
 	key := strings.ToLower(filepath.Ext(e.Name))
@@ -612,7 +664,7 @@ func (a *App) drawTile(t treemap.Tile, e scan.Entry, selected bool) {
 }
 func (a *App) drawHelp(w, h int) {
 	a.screen.FillArea(1, 1, w-2, h-2, ' ', base)
-	lines := []string{"KEYBOARD & MOUSE", "", "↑/↓ or j/k   Select an entry; wheel scrolls", "Enter / l   Open selected directory", "← / h / Backspace   Parent directory", "g   Return to the scan root", "Click   Select tile or list entry", "Double-click   Open directory; right-click goes back", "/   Filter names in the current directory; Esc clears", ". / H   Show or hide dotfiles and dot directories (default: shown)", "a   Toggle allocated bytes / apparent file sizes", "s   Stop scan and browse partial results", "r   Rescan disk     d   Choose another disk", "Home / End / PgUp / PgDn   Navigate the list", "q / Ctrl-C   Quit     Ctrl-L   Redraw", "", "Tiles represent immediate children, ordered by size.", "Directories open into another treemap. Tiny entries stay in the list.", "Symlinks are not followed; other filesystems are skipped.", "Hard links count once; filesystem overhead/free space is not mapped.", "", "Press any key to close"}
+	lines := []string{"KEYBOARD & MOUSE", "", "↑/↓ or j/k   Select an entry; wheel scrolls", "Enter / l   Open selected directory", "← / h / Backspace   Parent directory", "g   Return to the scan root", "Click   Select tile or list entry", "Double-click   Open directory; right-click goes back", "/   Filter current directory     Ctrl-F   Search scanned disk", ". / H   Show or hide dotfiles and dot directories (default: shown)", "a   Toggle allocated bytes / apparent file sizes", "s   Stop scan and browse partial results", "r   Rescan disk     d   Choose another disk", "Home / End / PgUp / PgDn   Navigate the list", "q / Ctrl-C   Quit     Ctrl-L   Redraw", "", "Tiles represent immediate children, ordered by size.", "Directories open into another treemap. Tiny entries stay in the list.", "Symlinks are not followed; other filesystems are skipped.", "Hard links count once; filesystem overhead/free space is not mapped.", "", "Press any key to close"}
 	for i, line := range lines {
 		if i+2 >= h-2 {
 			break

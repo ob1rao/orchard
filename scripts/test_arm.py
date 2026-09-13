@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Run release archives on emulated Pi CPUs. Requires qemu-user and Python 3."""
 import hashlib
+import datetime
 import json
 import os
 from pathlib import Path
@@ -40,6 +41,10 @@ for arch, emulator, cpu in [
         report = json.loads(subprocess.check_output(
             [*command, "--scan", str(fixture)], text=True, timeout=30))
         stats = report["stats"]
+        for child in report["children"]:
+            datetime.datetime.fromisoformat(child["modified"])
+            if child["created"] is not None:
+                datetime.datetime.fromisoformat(child["created"])
         assert stats["Done"] and not stats["Cancelled"] and stats["Errors"] == 0, stats
         assert stats["Files"] == 4 and stats["Directories"] == 2 and stats["Hardlinks"] == 1, stats
         assert stats["Apparent"] > stats["Allocated"], stats

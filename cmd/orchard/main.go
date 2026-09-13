@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/ob1rao/orchard/internal/scan"
 	"github.com/ob1rao/orchard/internal/ui"
@@ -57,9 +58,11 @@ func run() int {
 		<-done
 		v := t.Snapshot(t.Root, *apparent)
 		type entry struct {
-			Name      string `json:"name"`
-			Directory bool   `json:"directory"`
-			Bytes     uint64 `json:"bytes"`
+			Name      string  `json:"name"`
+			Directory bool    `json:"directory"`
+			Bytes     uint64  `json:"bytes"`
+			Modified  string  `json:"modified"`
+			Created   *string `json:"created"`
 		}
 		report := struct {
 			Path     string     `json:"path"`
@@ -72,7 +75,12 @@ func run() int {
 			report.Metric = "apparent"
 		}
 		for _, e := range v.Entries {
-			report.Children = append(report.Children, entry{e.Name, e.Dir, e.Size})
+			var created *string
+			if e.Node.HasCreated {
+				value := time.Unix(e.Node.Created, 0).UTC().Format(time.RFC3339)
+				created = &value
+			}
+			report.Children = append(report.Children, entry{Name: e.Name, Directory: e.Dir, Bytes: e.Size, Modified: time.Unix(e.Node.Modified, 0).UTC().Format(time.RFC3339), Created: created})
 		}
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")

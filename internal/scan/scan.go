@@ -20,6 +20,8 @@ type Node struct {
 	Name                string
 	Parent              *Node
 	Dir                 bool
+	HasCreated          bool
+	Modified, Created   int64 // Unix seconds; Created is valid only when HasCreated is true.
 	Allocated, Apparent uint64
 	Children            []*Node
 }
@@ -64,6 +66,7 @@ type Tree struct {
 	Root    *Node
 	stats   Stats
 	started time.Time
+	index   []*Node // append-only search index, protected by mu
 }
 
 func (t *Tree) Snapshot(n *Node, apparent bool) View {
@@ -103,6 +106,9 @@ type item struct {
 	allocated, apparent uint64
 	id                  identity
 	links               uint64
+	mode                uint32
+	modified, created   int64
+	hasCreated          bool
 }
 type batch struct {
 	job   job
@@ -129,7 +135,10 @@ func Start(ctx context.Context, path string, opt Options) (*Tree, <-chan struct{
 		return nil, nil, fmt.Errorf("%s is not a directory", path)
 	}
 	st := info.Sys().(*syscall.Stat_t)
-	root := &Node{Name: path, Dir: true, Allocated: uint64(max(0, st.Blocks)) * 512, Apparent: uint64(max(0, info.Size()))}
+	root := &Node{Name: path, Dir: true, Allocated: uint64(max(0, st.Blocks)) * 512, Apparent: uint64(max(0, info.Size())), Modified: info.ModTime().Unix()}
+	if meta, err := readMetadata(unix.AT_FDCWD, path); err == nil && meta.id == (identity{uint64(st.Dev), uint64(st.Ino)}) {
+		root.Created, root.HasCreated = meta.created, meta.hasCreated
+	}
 	t := &Tree{Root: root, started: time.Now(), stats: Stats{Directories: 1}}
 	done := make(chan struct{})
 	workers := opt.Workers
@@ -179,19 +188,19 @@ func readDirectory(ctx context.Context, j job, out chan<- batch) {
 			if ctx.Err() != nil {
 				return
 			}
-			// fstatat anchors metadata to the opened directory and never follows links.
-			var s unix.Stat_t
-			if err := unix.Fstatat(fd, e.Name(), &s, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+			// Metadata is anchored to the open directory; symlinks are not followed.
+			it, err := readMetadata(fd, e.Name())
+			if err != nil {
 				if !send(batch{job: j, err: fmt.Errorf("%s: %w", e.Name(), err)}) {
 					return
 				}
 				continue
 			}
-			mode := s.Mode & unix.S_IFMT
+			mode := it.mode & unix.S_IFMT
 			if mode != unix.S_IFREG && mode != unix.S_IFDIR && mode != unix.S_IFLNK {
 				continue
 			}
-			b.items = append(b.items, item{e.Name(), mode == unix.S_IFDIR, uint64(max(0, s.Blocks)) * 512, uint64(max(0, s.Size)), identity{uint64(s.Dev), uint64(s.Ino)}, uint64(s.Nlink)})
+			b.items = append(b.items, it)
 		}
 		if readErr != nil {
 			b.done = true
@@ -287,8 +296,9 @@ func (t *Tree) run(ctx context.Context, root job, workers int) {
 						links[it.id] = true
 					}
 				}
-				n := &Node{Name: it.name, Parent: b.job.node, Dir: it.dir, Allocated: it.allocated, Apparent: it.apparent}
+				n := &Node{Name: it.name, Parent: b.job.node, Dir: it.dir, Allocated: it.allocated, Apparent: it.apparent, Modified: it.modified, Created: it.created, HasCreated: it.hasCreated}
 				b.job.node.Children = append(b.job.node.Children, n)
+				t.index = append(t.index, n)
 				allocated += it.allocated
 				apparent += it.apparent
 				if it.dir {

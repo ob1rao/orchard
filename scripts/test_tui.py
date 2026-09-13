@@ -51,6 +51,16 @@ class Terminal:
             self.read(0.2)
         assert text.encode() in self.output, f"missing {text!r}: {self.output[-3000:]!r}"
 
+    def expect_screen(self, text, seconds=8):
+        # Tcell emits cell diffs, so unchanged letters can be absent from raw
+        # output. Request a complete repaint when asserting an updated label.
+        until = time.monotonic() + seconds
+        while time.monotonic() < until:
+            self.send(b"\x0c")
+            if text.encode() in self.output:
+                return
+        raise AssertionError(f"missing screen text {text!r}: {self.output[-3000:]!r}")
+
     def send(self, data):
         self.output = b""
         os.write(self.fd, data)
@@ -59,7 +69,7 @@ class Terminal:
     def close(self):
         if self.closed:
             return
-        self.send(b"q")
+        self.send(b"\x03")
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline:
             pid, status = os.waitpid(self.pid, os.WNOHANG)
@@ -94,6 +104,28 @@ with tempfile.TemporaryDirectory(prefix="orchard-pty-") as td:
         terminal.expect("deep-file-unique.dat")
         terminal.send(b"\x7f")
         terminal.expect("small.txt")
+        terminal.send(b"\x06")
+        terminal.expect("RECURSIVE SEARCH")
+        terminal.send(b"deep-file")
+        terminal.expect("deep-file-unique.dat")
+        terminal.send(b"\x0c")
+        terminal.expect("1 matches")
+        terminal.send(b"\x0c")
+        terminal.expect("MODIFIED (local)")
+        terminal.expect("Created:")
+        terminal.send(b"\r")
+        terminal.expect("deep-file-unique.dat")
+        terminal.send(b"\x7f")
+        terminal.expect("small.txt")
+        terminal.send(b"\x06\t[")
+        terminal.expect_screen("Invalid regex")
+        terminal.send(b"\x15")
+        terminal.send(b"deep.*dat$")
+        terminal.expect("deep-file-unique.dat")
+        terminal.send(b"\x0c")
+        terminal.expect("1 matches")
+        terminal.send(b"\x1b")
+        terminal.read(0.5)
         # SGR mouse: two clicks inside the largest tile, with release events.
         terminal.send(b"\x1b[<0;50;10M\x1b[<0;50;10m\x1b[<0;50;10M\x1b[<0;50;10m")
         terminal.expect("deep-file-unique.dat")
@@ -114,4 +146,4 @@ try:
     terminal.expect("Enter / click scan")
 finally:
     terminal.close()
-print("TUI: disk picker, rendering, keyboard, mouse, filtering, hidden toggle, resize, and terminal restoration passed")
+print("TUI: disk picker, rendering, keyboard, mouse, filtering, hidden toggle, recursive/regex search, dates, resize, and terminal restoration passed")

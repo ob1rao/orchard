@@ -28,6 +28,8 @@ Options precede the directory argument. `--scan` returns 0 on a complete scan,
 1 for unreadable entries or another error, 2 for invalid arguments, and 130 when
 cancelled. A partial JSON report is still emitted for scan errors/cancellation.
 `stats.Elapsed` is a duration in nanoseconds; `bytes` uses the selected metric.
+Each child also includes `modified` and `created` as UTC RFC 3339 timestamps.
+`created` is `null` when the filesystem does not provide a birth time.
 
 ## Install a release
 
@@ -55,7 +57,7 @@ To review the script before running it, save it locally instead of piping to
 `sh`, then run `sh install.sh`. From a checkout, customize a release install:
 
 ```sh
-ORCHARD_VERSION=v0.1.2 ORCHARD_INSTALL_DIR="$HOME/bin" sh install.sh
+ORCHARD_VERSION=v0.2.0 ORCHARD_INSTALL_DIR="$HOME/bin" sh install.sh
 ```
 
 `ORCHARD_REPO` overrides the release repository. Uninstall by removing the
@@ -118,6 +120,7 @@ If you report an issue, include the output of `uname -m`, `getconf LONG_BIT`,
 | Return to scan root | g |
 | Move through list | Mouse wheel, Page Up/Down, Home/End |
 | Filter current directory | / then type; Enter applies, Esc clears |
+| Search recursively across scanned disk | Ctrl-F |
 | Show/hide hidden files and directories (default: shown) | . or H |
 | Toggle allocated/apparent bytes | a |
 | Stop scan; keep partial results | s |
@@ -147,6 +150,56 @@ the session. This is a display toggle: scanning still includes hidden entries,
 and directory totals still include hidden data. A name filter limits both
 the list and the map; the directory total still represents the whole directory.
 The map can rearrange during scanning as sizes become known.
+
+## Recursive search and dates
+
+Press **Ctrl-F** from a directory view to search all discovered files and
+folders under the selected scan root. Searching uses the in-memory index and
+continues to refresh while the disk is being scanned; it does not reread files.
+The current directory's `/` filter does not limit recursive search.
+
+| Search action | Control |
+| --- | --- |
+| Type or edit query | Type / Backspace; Ctrl-U clears |
+| Plain text / regex | Tab or F2 |
+| Filename / full path | F3 |
+| Include / hide hidden entries | F4 |
+| Select result | Up/Down, Page Up/Down, Home/End, mouse wheel or click |
+| Reveal result in its containing directory | Enter or double-click |
+| Return to previous directory view | Esc or right-click |
+
+Plain-text matching ignores case. Regex matching is case-sensitive by default;
+use `(?i)` for case-insensitive matching. Examples:
+
+- `invoice` — plain-text substring in filenames.
+- `(?i)\.(jpg|png)$` — regex matching image filename extensions.
+- `/logs/.*\.log$` — regex with full-path mode enabled.
+
+Regex follows [Go's regular-expression syntax](https://pkg.go.dev/regexp),
+which does not support lookaround or backreferences. Invalid expressions show
+an error in the search view. The query is limited to 4,096 UTF-8 bytes. Typing
+cancels outdated searches; matching runs outside the scanner's lock. When hiding
+hidden entries, files inside hidden ancestor directories are also excluded.
+
+Results show full paths and sizes, plus modified/created columns when the
+terminal is at least 100 columns wide. Enter selects the matching entry in its
+parent's directory view; Enter again opens it if it is a directory. Search lists
+up to 10,000 matches in discovery order, then sorts those results by size. It
+reports the full match count and asks you to narrow the query when capped.
+Results reflect the scan, not subsequent filesystem changes; rescan with `r`
+after closing search to refresh the index.
+
+The normal directory view shows **modified and created timestamps for the
+selected entry** below the map, with date columns in the sidebar when the
+terminal is at least 150 columns wide. Dates use the local timezone, to the
+nearest second. Directory timestamps describe the directory itself, not the
+newest descendant's timestamp.
+
+Creation time is read from Linux `statx` when supported and from macOS birth
+time. Older Linux kernels fall back to ordinary metadata reads. If creation
+time is unsupported, Orchard displays **unavailable** (or `—` in compact date
+columns); it never substitutes Unix ctime, which is metadata-change time.
+See the [Linux statx reference](https://www.man7.org/linux/man-pages/man2/statx.2.html).
 
 ## What the numbers mean
 
@@ -184,7 +237,8 @@ stops periodic redraws once scanning finishes. Tcell sends terminal-cell diffs.
 
 The map uses balanced binary weighted partitioning, adjusted for terminal cells
 being taller than they are wide. It clips sub-cell items rather than inflating
-their apparent sizes. The tree retains a node per discovered entry, so memory is
+their apparent sizes. The tree retains a node per discovered entry plus an append-only pointer index
+for search. Timestamps are stored as Unix seconds to keep overhead small. Memory is
 linear in file count. Very large single directories also cost more to sort.
 Choose a smaller subtree on memory-constrained Pis. `--workers 1` can help on
 seek-sensitive disks; the default is 2–8 workers depending on available CPUs.
@@ -192,9 +246,11 @@ Cancellation stops scheduling immediately; an in-flight filesystem call can
 still delay exit on a stalled disk or network mount.
 
 A development benchmark on Linux amd64 / Intel Xeon 6975P-C, averaged over three
-warm-cache iterations, scanned 10,000 small files in **13.8 ms** (~724k files/s),
-with 3.34 MB of Go allocations per scan. A 10,000-entry map in a 160 × 50 viewport
-took **0.30 ms**. These synthetic results exclude fixture creation and do not
+warm-cache iterations, scanned 10,000 small files in **13.9 ms** (~718k files/s),
+with 4.16 MB of Go allocations per scan. A 10,000-entry map in a 160 × 50 viewport
+took **0.30 ms**. Searching 100,000 indexed filenames averaged **3.5 ms**
+for plain text and **4.0 ms** for regex (query `999`, three iterations).
+These synthetic results exclude fixture creation and do not
 predict cold-disk, network, macOS, or Raspberry Pi performance.
 
 ## Test and release
@@ -202,7 +258,7 @@ predict cold-disk, network, macOS, or Raspberry Pi performance.
 ```sh
 make test       # race tests, vet, installer fixtures, real PTY smoke test
 make bench      # synthetic scanner and layout benchmarks
-make release VERSION=v0.1.2
+make release VERSION=v0.2.0
 ```
 
 `make test` also needs Python 3; its integration tests use only the standard

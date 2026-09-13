@@ -1,0 +1,38 @@
+name: CI
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go test -race ./...
+      - run: go vet ./...
+      - run: go build -o bin/diskmap ./cmd/diskmap
+      - run: ./bin/diskmap --scan internal
+      - run: test -z "$(gofmt -l cmd internal)"
+      - run: python3 scripts/test_installer.py
+      - run: python3 scripts/test_tui.py
+  cross-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: scripts/build-release.sh ci
+      - uses: actions/upload-artifact@v4
+        with:
+          name: diskmap-binaries
+          path: dist/

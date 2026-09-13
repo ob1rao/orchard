@@ -168,11 +168,11 @@ library. `make release` runs on Linux and cross-compiles all six targets into
 `dist/`, with `checksums.txt`. CI runs tests on Linux and macOS and produces
 cross-platform build artifacts. A pushed `v*` tag publishes release archives.
 
-Validated locally: Linux execution, scanner race tests, geometry invariants,
-keyboard/mouse navigation in a real PTY, resize and terminal restoration, nine
-installer scenarios, and compilation of all six targets. macOS and Raspberry Pi
-binaries still require native device smoke testing; cross-compilation alone does
-not establish native runtime compatibility.
+Validated: Linux execution locally and in GitHub Actions; native macOS ARM64
+execution in GitHub Actions; scanner race tests; geometry invariants;
+keyboard/mouse navigation in a real PTY; resize and terminal restoration; nine
+installer scenarios; and compilation of all six targets. Raspberry Pi and Intel
+Mac binaries still require native device smoke testing.
 
 First publication, from this checkout with GitHub CLI authenticated as an account
 that can create repositories for `ob1rao`:

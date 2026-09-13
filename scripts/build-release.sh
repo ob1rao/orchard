@@ -8,7 +8,8 @@ for target in linux/amd64 linux/arm64 linux/armv6 linux/armv7 darwin/amd64 darwi
  stage=$(mktemp -d)
  CGO_ENABLED=0 GOOS=$os GOARCH=$goarch GOARM=$goarm go build -trimpath -ldflags="-s -w -X main.version=$version" -o "$stage/orchard" ./cmd/orchard
  cp README.md THIRD_PARTY_NOTICES.txt "$stage/"
- tar -czf "dist/orchard_${os}_${arch}.tar.gz" -C "$stage" orchard README.md THIRD_PARTY_NOTICES.txt
+ cp -R docs "$stage/docs"
+ tar -czf "dist/orchard_${os}_${arch}.tar.gz" -C "$stage" orchard README.md THIRD_PARTY_NOTICES.txt docs
  rm -rf "$stage"
 done
 (cd dist && sha256sum orchard_*.tar.gz > checksums.txt)

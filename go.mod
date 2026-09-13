@@ -1,4 +1,4 @@
-module github.com/ob1rao/diskmap
+module github.com/ob1rao/orchard
 
 go 1.27.1
 

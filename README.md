@@ -1,4 +1,4 @@
-# diskmap
+# orchard
 
 A fast, read-only disk-usage treemap for your terminal. Select a mounted disk,
 watch its map populate while it scans, and drill into directories with the mouse
@@ -11,17 +11,17 @@ fallbacks. No GUI, browser, daemon, or runtime installation required.
 From a source checkout, with Go **1.27.1+**:
 
 ```sh
-go build -trimpath -o bin/diskmap ./cmd/diskmap
-./bin/diskmap
+go build -trimpath -o bin/orchard ./cmd/orchard
+./bin/orchard
 ```
 
 Launch without arguments to choose a disk. You can also start with a directory:
 
 ```sh
-./bin/diskmap "$HOME"
-./bin/diskmap --apparent /path/to/folder
-./bin/diskmap --workers 4 /path/to/folder
-./bin/diskmap --scan /path/to/folder   # JSON, without a terminal
+./bin/orchard "$HOME"
+./bin/orchard --apparent /path/to/folder
+./bin/orchard --workers 4 /path/to/folder
+./bin/orchard --scan /path/to/folder   # JSON, without a terminal
 ```
 
 Options precede the directory argument. `--scan` returns 0 on a complete scan,
@@ -45,14 +45,14 @@ SHA-256 checksum, and atomically installs to `~/.local/bin`. It never uses sudo.
 The installer needs `curl`, `tar`, and `sha256sum` or `shasum`.
 
 **While the repository is private**, log in with GitHub CLI using an account
-with access to `ob1rao/diskmap`, then use this authenticated curl command:
+with access to `ob1rao/orchard`, then use this authenticated curl command:
 
 ```sh
 gh auth login
 curl --proto '=https' --tlsv1.2 -fsSL \
   -H "Authorization: Bearer $(gh auth token)" \
   -H 'Accept: application/vnd.github.raw+json' \
-  https://api.github.com/repos/ob1rao/diskmap/contents/install.sh | sh
+  https://api.github.com/repos/ob1rao/orchard/contents/install.sh | sh
 ```
 
 GitHub CLI handles authenticated release downloads inside the installer. A
@@ -63,18 +63,18 @@ If the repository becomes public, the ordinary command is:
 
 ```sh
 curl --proto '=https' --tlsv1.2 -fsSL \
-  https://raw.githubusercontent.com/ob1rao/diskmap/main/install.sh | sh
+  https://raw.githubusercontent.com/ob1rao/orchard/main/install.sh | sh
 ```
 
 To review the script before running it, save it locally instead of piping to
 `sh`, then run `sh install.sh`. From a checkout, customize a release install:
 
 ```sh
-DISKMAP_VERSION=v0.1.0 DISKMAP_INSTALL_DIR="$HOME/bin" sh install.sh
+ORCHARD_VERSION=v0.1.0 ORCHARD_INSTALL_DIR="$HOME/bin" sh install.sh
 ```
 
-`DISKMAP_REPO` overrides the release repository. Uninstall by removing the
-installed `diskmap` binary. There are no configuration files or background services.
+`ORCHARD_REPO` overrides the release repository. Uninstall by removing the
+installed `orchard` binary. There are no configuration files or background services.
 
 ## Navigate
 
@@ -178,7 +178,7 @@ First publication, from this checkout with GitHub CLI authenticated as an accoun
 that can create repositories for `ob1rao`:
 
 ```sh
-gh repo create ob1rao/diskmap --private --source=. --remote=origin --push
+gh repo create ob1rao/orchard --private --source=. --remote=origin --push
 git tag v0.1.0
 git push origin v0.1.0
 ```

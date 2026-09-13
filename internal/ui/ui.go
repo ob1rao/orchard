@@ -12,9 +12,9 @@ import (
 
 	"github.com/clipperhouse/displaywidth"
 	"github.com/gdamore/tcell/v3"
-	"github.com/ob1rao/diskmap/internal/scan"
-	"github.com/ob1rao/diskmap/internal/treemap"
-	"github.com/ob1rao/diskmap/internal/volumes"
+	"github.com/ob1rao/orchard/internal/scan"
+	"github.com/ob1rao/orchard/internal/treemap"
+	"github.com/ob1rao/orchard/internal/volumes"
 )
 
 var (
@@ -410,11 +410,11 @@ func (a *App) draw() {
 	w, h := s.Size()
 	a.tiles = nil
 	if w < 50 || h < 16 {
-		a.text(1, 1, w-2, "diskmap · resize terminal to at least 50 × 16", base)
+		a.text(1, 1, w-2, "orchard · resize terminal to at least 50 × 16", base)
 		s.Show()
 		return
 	}
-	a.text(2, 0, w-4, "DISKMAP  /  see where your space goes", base.Foreground(accent).Bold(true))
+	a.text(2, 0, w-4, "ORCHARD  /  see where your space goes", base.Foreground(accent).Bold(true))
 	if a.picker {
 		a.drawPicker(w, h)
 	} else {
@@ -454,7 +454,7 @@ func (a *App) drawPicker(w, h int) {
 		a.text(4, y+1, w-6, fmt.Sprintf("%s used / %s total   %.0f%%   ·   %s available", Bytes(used), Bytes(v.Total), percent(used, v.Total), Bytes(v.Available)), style.Foreground(muted))
 	}
 	if len(a.volumes) == 0 {
-		a.text(2, 6, w-4, "No disks found. Try: diskmap /path/to/folder", base)
+		a.text(2, 6, w-4, "No disks found. Try: orchard /path/to/folder", base)
 	}
 	a.text(2, h-3, w-4, a.notice, base.Foreground(tcell.ColorYellow))
 	a.text(2, h-2, w-4, "↑↓ select  ·  Enter / click scan  ·  r refresh  ·  ? help  ·  q quit", base.Foreground(accent))

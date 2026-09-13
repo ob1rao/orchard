@@ -12,7 +12,7 @@ import tempfile
 import termios
 import time
 
-BINARY = Path(__file__).resolve().parents[1] / "bin" / "diskmap"
+BINARY = Path(__file__).resolve().parents[1] / "bin" / "orchard"
 
 class Terminal:
     def __init__(self, *args):
@@ -71,7 +71,7 @@ class Terminal:
         os.close(self.fd); self.closed = True
         raise AssertionError("TUI failed to exit promptly")
 
-with tempfile.TemporaryDirectory(prefix="diskmap-pty-") as td:
+with tempfile.TemporaryDirectory(prefix="orchard-pty-") as td:
     root = Path(td)
     (root / "payload").mkdir()
     (root / "payload" / "deep-file-unique.dat").write_bytes(b"x" * 100_000)

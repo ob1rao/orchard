@@ -11,19 +11,19 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 
 def check(system, machine, arch, private=False, corrupt=False, bits="64"):
-    with tempfile.TemporaryDirectory(prefix="diskmap install test ") as td:
+    with tempfile.TemporaryDirectory(prefix="orchard install test ") as td:
         root = Path(td)
         mocks, fixtures, dest = root / "mocks", root / "fixtures", root / "install dir"
         mocks.mkdir(); fixtures.mkdir(); dest.mkdir()
-        name = f"diskmap_{system.lower() if system == 'Linux' else 'darwin'}_{arch}.tar.gz"
+        name = f"orchard_{system.lower() if system == 'Linux' else 'darwin'}_{arch}.tar.gz"
         archive = fixtures / name
-        payload = b"#!/bin/sh\nprintf 'diskmap fixture\\n'\n"
+        payload = b"#!/bin/sh\nprintf 'orchard fixture\\n'\n"
         with tarfile.open(archive, "w:gz") as tar:
-            info = tarfile.TarInfo("diskmap"); info.size = len(payload); info.mode = 0o755
+            info = tarfile.TarInfo("orchard"); info.size = len(payload); info.mode = 0o755
             tar.addfile(info, io.BytesIO(payload))
         digest = "0" * 64 if corrupt else hashlib.sha256(archive.read_bytes()).hexdigest()
         (fixtures / "checksums.txt").write_text(f"{digest}  {name}\n")
-        (dest / "diskmap").write_text("previous binary")
+        (dest / "orchard").write_text("previous binary")
         scripts = {
             "uname": f'#!/bin/sh\ncase "$1" in -s) echo {system};; -m) echo {machine};; esac\n',
             "getconf": f"#!/bin/sh\necho {bits}\n",
@@ -49,16 +49,16 @@ cp "$FIXTURES/"* "$dest/"
         for name_, content in scripts.items():
             p = mocks / name_; p.write_text(content); p.chmod(0o755)
         env = dict(os.environ, PATH=f"{mocks}:/usr/bin:/bin", FIXTURES=str(fixtures),
-                   PRIVATE="yes" if private else "no", DISKMAP_INSTALL_DIR=str(dest),
-                   DISKMAP_VERSION="v0.1.0", DISKMAP_REPO="ob1rao/diskmap")
+                   PRIVATE="yes" if private else "no", ORCHARD_INSTALL_DIR=str(dest),
+                   ORCHARD_VERSION="v0.1.0", ORCHARD_REPO="ob1rao/orchard")
         result = subprocess.run(["sh", str(ROOT / "install.sh")], env=env, capture_output=True, text=True)
         if corrupt:
             assert result.returncode != 0, result.stdout
-            assert (dest / "diskmap").read_text() == "previous binary", "failed install replaced existing binary"
+            assert (dest / "orchard").read_text() == "previous binary", "failed install replaced existing binary"
         else:
             assert result.returncode == 0, result.stdout + result.stderr
-            assert os.access(dest / "diskmap", os.X_OK)
-            assert (dest / "diskmap").read_bytes() == payload
+            assert os.access(dest / "orchard", os.X_OK)
+            assert (dest / "orchard").read_bytes() == payload
 
 for system, machine, arch in [("Linux", "x86_64", "amd64"), ("Linux", "aarch64", "arm64"),
                              ("Linux", "armv6l", "armv6"), ("Linux", "armv7l", "armv7"),

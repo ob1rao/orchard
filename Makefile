@@ -1,6 +1,6 @@
 .PHONY: build test bench release clean
 build:
-	go build -trimpath -o bin/diskmap ./cmd/diskmap
+	go build -trimpath -o bin/orchard ./cmd/orchard
 test: build
 	go test -race ./...
 	go vet ./...

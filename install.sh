@@ -1,10 +1,10 @@
 #!/bin/sh
-# Install a published diskmap binary. No root access or Go toolchain required.
+# Install a published orchard binary. No root access or Go toolchain required.
 set -eu
-REPO=${DISKMAP_REPO:-ob1rao/diskmap}
-VERSION=${DISKMAP_VERSION:-latest}
-DEST=${DISKMAP_INSTALL_DIR:-"$HOME/.local/bin"}
-fail() { printf '%s\n' "diskmap: $*" >&2; exit 1; }
+REPO=${ORCHARD_REPO:-ob1rao/orchard}
+VERSION=${ORCHARD_VERSION:-latest}
+DEST=${ORCHARD_INSTALL_DIR:-"$HOME/.local/bin"}
+fail() { printf '%s\n' "orchard: $*" >&2; exit 1; }
 command -v curl >/dev/null 2>&1 || fail 'curl is required'
 command -v tar >/dev/null 2>&1 || fail 'tar is required'
 case "$(uname -s)" in
@@ -24,7 +24,7 @@ if [ "$os" = linux ] && [ "$arch" = arm64 ] && command -v getconf >/dev/null 2>&
  if [ "$(getconf LONG_BIT)" = 32 ]; then arch=armv7; fi
 fi
 case "$os/$arch" in darwin/armv6|darwin/armv7) fail 'unsupported macOS architecture' ;; esac
-asset="diskmap_${os}_${arch}.tar.gz"
+asset="orchard_${os}_${arch}.tar.gz"
 tmp=$(mktemp -d)
 staged=''
 cleanup() { rm -rf "$tmp"; if [ -n "$staged" ]; then rm -f "$staged"; fi; }
@@ -49,14 +49,14 @@ elif command -v shasum >/dev/null 2>&1; then
 else
  fail 'sha256sum or shasum is required'
 fi
-tar -xzf "$tmp/$asset" -C "$tmp" diskmap
-[ -f "$tmp/diskmap" ] && [ ! -L "$tmp/diskmap" ] || fail 'archive does not contain a regular binary'
+tar -xzf "$tmp/$asset" -C "$tmp" orchard
+[ -f "$tmp/orchard" ] && [ ! -L "$tmp/orchard" ] || fail 'archive does not contain a regular binary'
 mkdir -p "$DEST"
-staged=$(mktemp "$DEST/.diskmap.XXXXXX")
-cp "$tmp/diskmap" "$staged"
+staged=$(mktemp "$DEST/.orchard.XXXXXX")
+cp "$tmp/orchard" "$staged"
 chmod 755 "$staged"
-mv -f "$staged" "$DEST/diskmap"
+mv -f "$staged" "$DEST/orchard"
 staged=''
-printf '\nInstalled %s\n' "$DEST/diskmap"
+printf '\nInstalled %s\n' "$DEST/orchard"
 case ":$PATH:" in *":$DEST:"*) ;; *) printf 'Add to your shell profile: export PATH="%s:$PATH"\n' "$DEST" ;; esac
-printf 'Run diskmap to select a disk, or diskmap /path/to/folder.\n'
+printf 'Run orchard to select a disk, or orchard /path/to/folder.\n'

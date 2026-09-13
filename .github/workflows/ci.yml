@@ -18,8 +18,8 @@ jobs:
           cache: true
       - run: go test -race ./...
       - run: go vet ./...
-      - run: go build -o bin/diskmap ./cmd/diskmap
-      - run: ./bin/diskmap --scan internal
+      - run: go build -o bin/orchard ./cmd/orchard
+      - run: ./bin/orchard --scan internal
       - run: test -z "$(gofmt -l cmd internal)"
       - run: python3 scripts/test_installer.py
       - run: python3 scripts/test_tui.py
@@ -34,5 +34,5 @@ jobs:
       - run: scripts/build-release.sh ci
       - uses: actions/upload-artifact@v4
         with:
-          name: diskmap-binaries
+          name: orchard-binaries
           path: dist/

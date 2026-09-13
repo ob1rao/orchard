@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/ob1rao/diskmap/internal/scan"
-	"github.com/ob1rao/diskmap/internal/treemap"
+	"github.com/ob1rao/orchard/internal/scan"
+	"github.com/ob1rao/orchard/internal/treemap"
 )
 
 func testApp(t *testing.T) *App {

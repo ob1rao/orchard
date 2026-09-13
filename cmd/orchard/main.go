@@ -9,21 +9,21 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/ob1rao/diskmap/internal/scan"
-	"github.com/ob1rao/diskmap/internal/ui"
+	"github.com/ob1rao/orchard/internal/scan"
+	"github.com/ob1rao/orchard/internal/ui"
 )
 
 var version = "dev"
 
 func main() { os.Exit(run()) }
 func run() int {
-	flags := flag.NewFlagSet("diskmap", flag.ContinueOnError)
+	flags := flag.NewFlagSet("orchard", flag.ContinueOnError)
 	apparent := flags.Bool("apparent", false, "show logical file lengths instead of allocated blocks")
 	headless := flags.Bool("scan", false, "scan a path and print a JSON summary without a TUI")
 	workers := flags.Int("workers", scan.DefaultWorkers(), "directory workers (1-64)")
 	ver := flags.Bool("version", false, "print version")
 	flags.Usage = func() {
-		fmt.Fprintln(flags.Output(), "Usage: diskmap [options] [directory]\n\nLaunch without a directory to select a mounted disk.")
+		fmt.Fprintln(flags.Output(), "Usage: orchard [options] [directory]\n\nLaunch without a directory to select a mounted disk.")
 		flags.PrintDefaults()
 	}
 	if err := flags.Parse(os.Args[1:]); err != nil {
@@ -33,11 +33,11 @@ func run() int {
 		return 2
 	}
 	if *ver {
-		fmt.Println("diskmap " + version)
+		fmt.Println("orchard " + version)
 		return 0
 	}
 	if flags.NArg() > 1 || *workers < 1 || *workers > 64 {
-		fmt.Fprintln(os.Stderr, "diskmap: supply at most one path and 1-64 workers")
+		fmt.Fprintln(os.Stderr, "orchard: supply at most one path and 1-64 workers")
 		return 2
 	}
 	path := flags.Arg(0)
@@ -46,12 +46,12 @@ func run() int {
 	opt := scan.Options{Workers: *workers}
 	if *headless {
 		if path == "" {
-			fmt.Fprintln(os.Stderr, "diskmap: --scan requires a directory")
+			fmt.Fprintln(os.Stderr, "orchard: --scan requires a directory")
 			return 2
 		}
 		t, done, err := scan.Start(ctx, path, opt)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "diskmap:", err)
+			fmt.Fprintln(os.Stderr, "orchard:", err)
 			return 1
 		}
 		<-done
@@ -89,7 +89,7 @@ func run() int {
 		return 0
 	}
 	if err := ui.Run(ctx, path, *apparent, opt); err != nil {
-		fmt.Fprintln(os.Stderr, "diskmap:", err)
+		fmt.Fprintln(os.Stderr, "orchard:", err)
 		return 1
 	}
 	return 0

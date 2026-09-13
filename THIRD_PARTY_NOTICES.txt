@@ -1,6 +1,6 @@
 THIRD-PARTY NOTICES
 
-Licenses of dependencies linked into diskmap.
+Licenses of dependencies linked into orchard.
 
 ========================================================================
 github.com/clipperhouse/displaywidth v0.11.0

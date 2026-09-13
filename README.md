@@ -55,11 +55,57 @@ To review the script before running it, save it locally instead of piping to
 `sh`, then run `sh install.sh`. From a checkout, customize a release install:
 
 ```sh
-ORCHARD_VERSION=v0.1.0 ORCHARD_INSTALL_DIR="$HOME/bin" sh install.sh
+ORCHARD_VERSION=v0.1.2 ORCHARD_INSTALL_DIR="$HOME/bin" sh install.sh
 ```
 
 `ORCHARD_REPO` overrides the release repository. Uninstall by removing the
 installed `orchard` binary. There are no configuration files or background services.
+
+## Raspberry Pi OS / Raspbian
+
+Install on the Pi itself (no GitHub login or Go compiler needed):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ob1rao/orchard/main/install.sh | sh
+"$HOME/.local/bin/orchard"
+```
+
+The explicit path works immediately, even if `~/.local/bin` is not yet on your
+shell's PATH. To use the shorter command in the current shell:
+
+```sh
+export PATH="$HOME/.local/bin:$PATH"
+orchard
+```
+
+Installer selection follows the machine architecture and userland word size:
+
+| Pi environment | Release binary |
+| --- | --- |
+| Pi 1 / original Zero, `armv6l` | `linux_armv6` |
+| 32-bit Pi OS, `armv7l` or `armv8l` | `linux_armv7` |
+| 64-bit kernel (`aarch64`) with 32-bit userland | `linux_armv7` |
+| 64-bit Pi OS, `aarch64` / `arm64` | `linux_arm64` |
+
+The binaries are static and do not require a particular glibc version. Use a
+maintained Raspberry Pi OS installation with `curl`, CA certificates, `tar`, and
+`sha256sum` installed. The project's current ARM release binaries are tested
+under CPU emulation, including interactive navigation; physical-device testing
+is still needed. See [Raspberry Pi OS documentation](https://www.raspberrypi.com/documentation/computers/os.html)
+for the supported 32-bit and 64-bit OS variants.
+
+For a quick test over SSH, use an interactive terminal (`ssh -t` if needed),
+then select the root filesystem `/` in Orchard. Allow the scan to complete,
+enter a large directory, and return with Backspace. Mouse navigation requires a
+terminal that forwards mouse events; keyboard navigation works independently.
+For a smaller initial scan or slower SD card:
+
+```sh
+"$HOME/.local/bin/orchard" --workers 2 "$HOME"
+```
+
+If you report an issue, include the output of `uname -m`, `getconf LONG_BIT`,
+`cat /etc/os-release`, and `"$HOME/.local/bin/orchard" --version`.
 
 ## Navigate
 
@@ -145,19 +191,25 @@ predict cold-disk, network, macOS, or Raspberry Pi performance.
 ```sh
 make test       # race tests, vet, installer fixtures, real PTY smoke test
 make bench      # synthetic scanner and layout benchmarks
-make release VERSION=v0.1.0
+make release VERSION=v0.1.2
 ```
 
 `make test` also needs Python 3; its integration tests use only the standard
 library. `make release` runs on Linux and cross-compiles all six targets into
 `dist/`, with `checksums.txt`. CI runs tests on Linux and macOS and produces
-cross-platform build artifacts. A pushed `v*` tag publishes release archives.
+cross-platform build artifacts. Both CI and release publication require ARM
+emulation tests to pass. To run those locally after building archives, install
+`qemu-user` and run `python3 scripts/test_arm.py dist`. A pushed `v*` tag
+publishes release archives.
 
 Validated: Linux execution locally and in GitHub Actions; native macOS ARM64
 execution in GitHub Actions; scanner race tests; geometry invariants;
-keyboard/mouse navigation in a real PTY; resize and terminal restoration; nine
-installer scenarios; and compilation of all six targets. Raspberry Pi and Intel
-Mac binaries still require native device smoke testing.
+keyboard/mouse navigation in a real PTY; resize and terminal restoration; eleven
+installer scenarios; and compilation of all six targets. ARMv6 (ARM1176), ARMv7
+(Cortex-A7), and ARM64 (Cortex-A53) release binaries also
+pass scan accounting and interactive PTY tests under QEMU. Physical Raspberry Pi
+and Intel Mac testing remains necessary; emulation does not measure SD-card
+performance or reproduce a complete Raspberry Pi OS installation.
 
 Publish a new version from this checkout with GitHub CLI authenticated and
 repository write access (replace `vX.Y.Z` with the next version):

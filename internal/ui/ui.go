@@ -552,7 +552,8 @@ func (a *App) drawTile(t treemap.Tile, e scan.Entry, selected bool) {
 	}
 	hash := fnv.New32a()
 	_, _ = hash.Write([]byte(key))
-	color := tcell.NewHexColor(palette[int(hash.Sum32())%len(palette)])
+	// Keep the hash unsigned: converting to int can go negative on 32-bit Pis.
+	color := tcell.NewHexColor(palette[hash.Sum32()%uint32(len(palette))])
 	style := base.Background(color)
 	border := style.Foreground(tcell.NewHexColor(0xa4b9cb))
 	if selected {

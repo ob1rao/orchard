@@ -2,6 +2,7 @@
 """Real PTY smoke test, using only the Python standard library."""
 import errno
 import fcntl
+import json
 import os
 from pathlib import Path
 import pty
@@ -13,6 +14,7 @@ import termios
 import time
 
 BINARY = Path(__file__).resolve().parents[1] / "bin" / "orchard"
+COMMAND = json.loads(os.environ.get("ORCHARD_TEST_COMMAND", json.dumps([str(BINARY)])))
 
 class Terminal:
     def __init__(self, *args):
@@ -20,7 +22,7 @@ class Terminal:
         if self.pid == 0:
             fcntl.ioctl(0, termios.TIOCSWINSZ, struct.pack("HHHH", 32, 120, 0, 0))
             os.environ.update(TERM="xterm-256color", COLORTERM="truecolor")
-            os.execv(str(BINARY), [str(BINARY), *map(str, args)])
+            os.execvp(COMMAND[0], [*COMMAND, *map(str, args)])
         self.output = b""
         self.closed = False
 

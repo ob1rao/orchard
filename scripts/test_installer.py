@@ -65,6 +65,8 @@ for system, machine, arch in [("Linux", "x86_64", "amd64"), ("Linux", "aarch64",
                              ("Darwin", "arm64", "arm64"), ("Darwin", "x86_64", "amd64")]:
     check(system, machine, arch)
 check("Linux", "aarch64", "armv7", bits="32")
+check("Linux", "armv8l", "armv7", bits="32")
+check("Linux", "arm64", "arm64")
 check("Linux", "x86_64", "amd64", private=True)
 check("Linux", "x86_64", "amd64", corrupt=True)
-print("Installer: all 9 platform/authentication/checksum cases passed")
+print("Installer: all 11 platform/authentication/checksum cases passed")

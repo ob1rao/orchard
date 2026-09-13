@@ -16,6 +16,10 @@ jobs:
       - run: go test -race ./...
       - run: go vet ./...
       - run: scripts/build-release.sh "$GITHUB_REF_NAME"
+      - name: Install ARM emulators
+        run: sudo apt-get update && sudo apt-get install -y qemu-user
+      - name: Test Raspberry Pi release binaries
+        run: python3 scripts/test_arm.py dist
       - name: Publish binaries and checksums
         env:
           GH_TOKEN: ${{ github.token }}

@@ -44,22 +44,7 @@ The installer detects the OS/architecture, downloads a release, verifies its
 SHA-256 checksum, and atomically installs to `~/.local/bin`. It never uses sudo.
 The installer needs `curl`, `tar`, and `sha256sum` or `shasum`.
 
-**While the repository is private**, log in with GitHub CLI using an account
-with access to `ob1rao/orchard`, then use this authenticated curl command:
-
-```sh
-gh auth login
-curl --proto '=https' --tlsv1.2 -fsSL \
-  -H "Authorization: Bearer $(gh auth token)" \
-  -H 'Accept: application/vnd.github.raw+json' \
-  https://api.github.com/repos/ob1rao/orchard/contents/install.sh | sh
-```
-
-GitHub CLI handles authenticated release downloads inside the installer. A
-published release must exist first. Anonymous curl installation cannot access
-a private GitHub repository.
-
-If the repository becomes public, the ordinary command is:
+Install the latest release without a GitHub account or login:
 
 ```sh
 curl --proto '=https' --tlsv1.2 -fsSL \
@@ -174,13 +159,12 @@ keyboard/mouse navigation in a real PTY; resize and terminal restoration; nine
 installer scenarios; and compilation of all six targets. Raspberry Pi and Intel
 Mac binaries still require native device smoke testing.
 
-First publication, from this checkout with GitHub CLI authenticated as an account
-that can create repositories for `ob1rao`:
+Publish a new version from this checkout with GitHub CLI authenticated and
+repository write access (replace `vX.Y.Z` with the next version):
 
 ```sh
-gh repo create ob1rao/orchard --private --source=. --remote=origin --push
-git tag v0.1.0
-git push origin v0.1.0
+git tag vX.Y.Z
+git push origin vX.Y.Z
 ```
 
 Wait for the Release workflow before testing the curl installer. Dependency

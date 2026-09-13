@@ -78,10 +78,18 @@ with tempfile.TemporaryDirectory(prefix="orchard-pty-") as td:
     (root / "payload").mkdir()
     (root / "payload" / "deep-file-unique.dat").write_bytes(b"x" * 100_000)
     (root / "small.txt").write_bytes(b"tiny")
+    (root / ".secret").write_bytes(b"hidden")
     terminal = Terminal(root)
     try:
         terminal.expect("COMPLETE")
         terminal.expect("SPACE MAP")
+        terminal.expect(".secret")
+        terminal.expect("Hidden: on")
+        terminal.send(b".\x0c")
+        terminal.expect("Hidden: off")
+        assert b".secret" not in terminal.output, "hidden file remains on screen"
+        terminal.send(b".\x0c")
+        terminal.expect(".secret")
         terminal.send(b"\r")
         terminal.expect("deep-file-unique.dat")
         terminal.send(b"\x7f")
@@ -106,4 +114,4 @@ try:
     terminal.expect("Enter / click scan")
 finally:
     terminal.close()
-print("TUI: disk picker, rendering, keyboard, mouse, filtering, resize, and terminal restoration passed")
+print("TUI: disk picker, rendering, keyboard, mouse, filtering, hidden toggle, resize, and terminal restoration passed")

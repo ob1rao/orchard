@@ -39,6 +39,7 @@ type App struct {
 	done                           <-chan struct{}
 	opt                            scan.Options
 	apparent                       bool
+	hideHidden                     bool
 	picker, help, searching        bool
 	filter, notice                 string
 	listWidth, listTop, listHeight int
@@ -136,6 +137,9 @@ func (a *App) refresh() {
 	a.view = a.tree.Snapshot(a.current, a.apparent)
 	a.entries = a.entries[:0]
 	for _, e := range a.view.Entries {
+		if a.hideHidden && strings.HasPrefix(e.Name, ".") {
+			continue
+		}
 		if strings.Contains(strings.ToLower(e.Name), strings.ToLower(a.filter)) {
 			a.entries = append(a.entries, e)
 		}
@@ -272,6 +276,11 @@ func (a *App) key(ctx context.Context, e *tcell.EventKey) bool {
 			if a.tree != nil {
 				a.refresh()
 			}
+		case ".", "H":
+			if !a.picker {
+				a.hideHidden = !a.hideHidden
+				a.refresh()
+			}
 		case "/":
 			if !a.picker {
 				a.searching = true
@@ -386,11 +395,11 @@ func (a *App) text(x, y, width int, s string, style tcell.Style) {
 	a.screen.PutStrStyled(x, y, s, style)
 }
 func Bytes(n uint64) string {
-	units := []string{"B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB"}
+	units := []string{"B", "KB", "MB", "GB", "TB", "PB", "EB"}
 	v := float64(n)
 	i := 0
-	for v >= 1024 && i < len(units)-1 {
-		v /= 1024
+	for v >= 1000 && i < len(units)-1 {
+		v /= 1000
 		i++
 	}
 	if i == 0 {
@@ -478,12 +487,13 @@ func (a *App) drawTree(w, h int) {
 	a.text(2, 2, w-4, "‹  "+a.current.Path(), base.Bold(true))
 	rate := float64(st.Files+st.Directories) / max(0.001, st.Elapsed.Seconds())
 	a.text(2, 3, w-4, fmt.Sprintf("%s  ·  %s %s  ·  %d files / %d dirs  ·  %.0f entries/s  ·  %s", state, Bytes(a.view.Size), mode, st.Files, st.Directories, rate, st.Elapsed.Round(time.Millisecond)), base.Foreground(accent))
-	a.listWidth = min(39, w/3)
+	a.listWidth = min(44, max(26, w/3))
 	a.listTop = 6
 	a.listHeight = h - 12
-	a.text(2, 5, a.listWidth-3, fmt.Sprintf("CONTENTS  %d", len(a.entries)), base.Foreground(muted).Bold(true))
+	a.text(2, 5, a.listWidth-15, fmt.Sprintf("CONTENTS %d", len(a.entries)), base.Foreground(muted).Bold(true))
+	a.text(a.listWidth-12, 5, 10, "      SIZE", base.Foreground(muted).Bold(true))
 	title := "SPACE MAP"
-	if a.filter != "" {
+	if a.filter != "" || a.hideHidden {
 		title += " · filtered"
 	}
 	a.text(a.listWidth+2, 5, w-a.listWidth-4, title, base.Foreground(muted).Bold(true))
@@ -507,7 +517,7 @@ func (a *App) drawTree(w, h int) {
 		}
 		size := Bytes(e.Size)
 		a.text(2, a.listTop+row, a.listWidth-15, name, style)
-		a.text(a.listWidth-12, a.listTop+row, 10, size, style)
+		a.text(a.listWidth-12, a.listTop+row, 10, fmt.Sprintf("%10s", size), style)
 	}
 	weights := make([]uint64, len(a.entries))
 	for i, e := range a.entries {
@@ -538,12 +548,20 @@ func (a *App) drawTree(w, h int) {
 		detail = st.LastError
 	}
 	a.text(2, h-4, w-4, detail, base.Foreground(muted))
-	if a.searching || a.filter != "" {
-		a.text(2, h-3, w-4, "Filter: /"+a.filter+"  (Esc clears)", base.Foreground(accent))
-	} else {
-		a.text(2, h-3, w-4, fmt.Sprintf("%d / %d entries drawn · tiny/zero entries remain in list · a: switch size metric", len(a.tiles), len(a.entries)), base.Foreground(muted))
+	hidden := "on"
+	if a.hideHidden {
+		hidden = "off"
 	}
-	a.text(2, h-2, w-4, "↑↓ select · Enter / double-click open · ← back · / filter · d disks · ? help · q quit", base.Foreground(accent))
+	first := 0
+	if len(a.entries) > 0 {
+		first = a.offset + 1
+	}
+	status := fmt.Sprintf("Hidden: %s (.) · entries %d–%d of %d · %d tiles · a: size metric", hidden, first, min(a.offset+a.listHeight, len(a.entries)), len(a.entries), len(a.tiles))
+	if a.searching || a.filter != "" {
+		status = fmt.Sprintf("Hidden: %s (.) · Filter: /%s (Esc clears)", hidden, a.filter)
+	}
+	a.text(2, h-3, w-4, status, base.Foreground(muted))
+	a.text(2, h-2, w-4, "↑↓ select · Enter / double-click open · ← back · . hidden · / filter · d disks · ? help · q quit", base.Foreground(accent))
 }
 func (a *App) drawTile(t treemap.Tile, e scan.Entry, selected bool) {
 	key := strings.ToLower(filepath.Ext(e.Name))
@@ -594,7 +612,7 @@ func (a *App) drawTile(t treemap.Tile, e scan.Entry, selected bool) {
 }
 func (a *App) drawHelp(w, h int) {
 	a.screen.FillArea(1, 1, w-2, h-2, ' ', base)
-	lines := []string{"KEYBOARD & MOUSE", "", "↑/↓ or j/k   Select an entry; wheel scrolls", "Enter / l   Open selected directory", "← / h / Backspace   Parent directory", "g   Return to the scan root", "Click   Select tile or list entry", "Double-click   Open directory; right-click goes back", "/   Filter names in the current directory; Esc clears", "a   Toggle allocated bytes / apparent file sizes", "s   Stop scan and browse partial results", "r   Rescan disk     d   Choose another disk", "Home / End / PgUp / PgDn   Navigate the list", "q / Ctrl-C   Quit     Ctrl-L   Redraw", "", "Tiles represent immediate children, ordered by size.", "Directories open into another treemap. Tiny entries stay in the list.", "Symlinks are not followed; other filesystems are skipped.", "Hard links count once; filesystem overhead/free space is not mapped.", "", "Press any key to close"}
+	lines := []string{"KEYBOARD & MOUSE", "", "↑/↓ or j/k   Select an entry; wheel scrolls", "Enter / l   Open selected directory", "← / h / Backspace   Parent directory", "g   Return to the scan root", "Click   Select tile or list entry", "Double-click   Open directory; right-click goes back", "/   Filter names in the current directory; Esc clears", ". / H   Show or hide dotfiles and dot directories (default: shown)", "a   Toggle allocated bytes / apparent file sizes", "s   Stop scan and browse partial results", "r   Rescan disk     d   Choose another disk", "Home / End / PgUp / PgDn   Navigate the list", "q / Ctrl-C   Quit     Ctrl-L   Redraw", "", "Tiles represent immediate children, ordered by size.", "Directories open into another treemap. Tiny entries stay in the list.", "Symlinks are not followed; other filesystems are skipped.", "Hard links count once; filesystem overhead/free space is not mapped.", "", "Press any key to close"}
 	for i, line := range lines {
 		if i+2 >= h-2 {
 			break

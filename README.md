@@ -118,6 +118,7 @@ If you report an issue, include the output of `uname -m`, `getconf LONG_BIT`,
 | Return to scan root | g |
 | Move through list | Mouse wheel, Page Up/Down, Home/End |
 | Filter current directory | / then type; Enter applies, Esc clears |
+| Show/hide hidden files and directories (default: shown) | . or H |
 | Toggle allocated/apparent bytes | a |
 | Stop scan; keep partial results | s |
 | Rescan selected disk | r |
@@ -132,8 +133,18 @@ larger terminal fits more help text.
 Tiles represent the **immediate children of the current directory**, with area
 proportional to their size. Enter a directory for a new map of its children.
 File extensions share colors; directory colors are stable by name. The bright
-border marks the selected entry. The ranked list includes small and zero-byte
-entries that cannot occupy a visible terminal tile. A name filter limits both
+border marks the selected entry. The sidebar lists every individual file and directory directly inside the current
+directory, with a right-aligned size column. Scroll with the arrow keys, mouse
+wheel, or Page Up/Down to reach every entry, including small and zero-byte files
+that cannot occupy a visible terminal tile. Sizes use decimal units: KB = 1,000
+bytes, MB = 1,000,000 bytes, and GB = 1,000,000,000 bytes. Files below 1 KB
+are shown in bytes.
+
+Hidden files and directories (names starting with `.`) are included by default.
+Press `.` or `H` to show or hide them in both the sidebar and map. The footer
+shows the current setting, which persists while navigating or rescanning during
+the session. This is a display toggle: scanning still includes hidden entries,
+and directory totals still include hidden data. A name filter limits both
 the list and the map; the directory total still represents the whole directory.
 The map can rearrange during scanning as sizes become known.
 

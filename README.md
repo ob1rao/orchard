@@ -36,6 +36,7 @@ To scan a particular folder:
 | --- | --- |
 | Select / scroll | ↑ ↓ or mouse wheel |
 | Open directory | Enter or double-click |
+| Expand map / page smaller entries | Space; b goes back |
 | Go back | Backspace or right-click |
 | Search the disk | f or Ctrl-F; Tab toggles regex |
 | View selected file / start at end | v / t |

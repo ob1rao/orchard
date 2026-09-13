@@ -149,6 +149,7 @@ func (a *App) findKey(e *tcell.EventKey) {
 		f.fullPath = !f.fullPath
 		a.queueFind()
 	case tcell.KeyF4:
+		a.mapPages = nil
 		a.hideHidden = !a.hideHidden
 		a.refresh()
 		a.queueFind()

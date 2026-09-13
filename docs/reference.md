@@ -115,6 +115,8 @@ If you report an issue, include the output of `uname -m`, `getconf LONG_BIT`,
 | Parent directory | Left, h, Backspace, right-click, or click path bar |
 | Return to scan root | g |
 | Move through list | Mouse wheel, Page Up/Down, Home/End |
+| Expand treemap / next smaller entries | Space |
+| Previous treemap page / restore sidebar | b |
 | View selected file / start at end | v / t |
 | Filter current directory | / then type; Enter applies, Esc clears |
 | Search recursively across scanned disk | f or Ctrl-F |
@@ -147,6 +149,26 @@ the session. This is a display toggle: scanning still includes hidden entries,
 and directory totals still include hidden data. A name filter limits both
 the list and the map; the directory total still represents the whole directory.
 The map can rearrange during scanning as sizes become known.
+
+## Expand and page the treemap
+
+Press **Space** to expand the map across the terminal, hiding the sidebar.
+Press Space again to start at the first entry whose full name and size do not
+fit, including entries too small to draw. Larger entries disappear and the
+remaining entries expand, keeping their relative sizes. Continue until the
+smallest entries are readable. **b** retraces the pages and finally restores
+the sidebar and its selection. The footer shows the page and entry range;
+percentages still refer to the entire directory.
+
+If the first entry is already clipped, it gets an individual page with a
+wrapped name before paging continues. Exceptionally long names can still be
+clipped in a small terminal. Zero-byte entries appear on a separate, labeled
+page with equal tiles; those tile areas do not represent disk usage.
+
+Arrow keys, the mouse, Enter, search, and file viewing work in the expanded map.
+Page anchors follow their entries as scan results reorder. Changing directory,
+filter, hidden visibility, or size metric returns to the split view. In the
+file viewer, Space and b continue to page through file contents.
 
 ## View file contents
 

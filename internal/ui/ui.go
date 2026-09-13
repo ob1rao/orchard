@@ -50,6 +50,8 @@ type App struct {
 	findResults                    chan findUpdate
 	findSerial                     uint64
 	viewer                         *fileView
+	mapPages                       []mapPage
+	mapReturnSelected              *scan.Node
 }
 
 func Run(ctx context.Context, path string, apparent bool, opt scan.Options) error {
@@ -133,6 +135,7 @@ func (a *App) start(ctx context.Context, path string) error {
 		a.notice = err.Error()
 		return err
 	}
+	a.mapPages = nil
 	a.tree = t
 	a.current = t.Root
 	a.cancel = cancel
@@ -172,6 +175,7 @@ func (a *App) enter(n *scan.Node) {
 	if !n.Dir {
 		return
 	}
+	a.mapPages = nil
 	a.current = n
 	a.filter = ""
 	a.entries = nil
@@ -192,7 +196,8 @@ func (a *App) move(delta int) {
 	if a.picker {
 		a.disk = max(0, min(len(a.volumes)-1, a.disk+delta))
 	} else {
-		a.selected = max(0, min(len(a.entries)-1, a.selected+delta))
+		lo, hi := a.mapBounds()
+		a.selected = max(lo, min(hi-1, a.selected+delta))
 	}
 }
 func (a *App) key(ctx context.Context, e *tcell.EventKey) bool {
@@ -239,6 +244,7 @@ func (a *App) key(ctx context.Context, e *tcell.EventKey) bool {
 	case tcell.KeyEscape:
 		if a.filter != "" {
 			a.filter = ""
+			a.mapPages = nil
 			a.refresh()
 		} else if !a.picker {
 			a.back()
@@ -255,13 +261,14 @@ func (a *App) key(ctx context.Context, e *tcell.EventKey) bool {
 		if a.picker {
 			a.disk = 0
 		} else {
-			a.selected = 0
+			a.selected, _ = a.mapBounds()
 		}
 	case tcell.KeyEnd:
 		if a.picker {
 			a.disk = max(0, len(a.volumes)-1)
 		} else {
-			a.selected = max(0, len(a.entries)-1)
+			_, hi := a.mapBounds()
+			a.selected = max(0, hi-1)
 		}
 	case tcell.KeyLeft, tcell.KeyBackspace, tcell.KeyBackspace2:
 		if !a.picker {
@@ -279,6 +286,14 @@ func (a *App) key(ctx context.Context, e *tcell.EventKey) bool {
 		a.screen.Sync()
 	case tcell.KeyRune:
 		switch e.Str() {
+		case " ":
+			if !a.picker {
+				a.nextMapPage()
+			}
+		case "b":
+			if !a.picker {
+				a.previousMapPage()
+			}
 		case "f":
 			if !a.picker {
 				a.openFind()
@@ -306,21 +321,25 @@ func (a *App) key(ctx context.Context, e *tcell.EventKey) bool {
 				a.enter(a.tree.Root)
 			}
 		case "d":
+			a.mapPages = nil
 			a.picker = true
 			a.offset = 0
 			a.volumes, _ = volumes.List()
 		case "a":
+			a.mapPages = nil
 			a.apparent = !a.apparent
 			if a.tree != nil {
 				a.refresh()
 			}
 		case ".", "H":
 			if !a.picker {
+				a.mapPages = nil
 				a.hideHidden = !a.hideHidden
 				a.refresh()
 			}
 		case "/":
 			if !a.picker {
+				a.mapPages = nil
 				a.searching = true
 				a.filter = ""
 				a.refresh()
@@ -537,6 +556,10 @@ func (a *App) drawTree(w, h int) {
 	a.text(2, 2, w-4, "‹  "+a.current.Path(), base.Bold(true))
 	rate := float64(st.Files+st.Directories) / max(0.001, st.Elapsed.Seconds())
 	a.text(2, 3, w-4, fmt.Sprintf("%s  ·  %s %s  ·  %d files / %d dirs  ·  %.0f entries/s  ·  %s", state, Bytes(a.view.Size), mode, st.Files, st.Directories, rate, st.Elapsed.Round(time.Millisecond)), base.Foreground(accent))
+	if len(a.mapPages) > 0 {
+		a.drawFullMap(w, h)
+		return
+	}
 	a.listWidth = min(44, max(26, w/3))
 	dateColumns := w >= 150
 	if dateColumns {
@@ -592,7 +615,7 @@ func (a *App) drawTree(w, h int) {
 	}
 	a.tiles = treemap.Layout(weights, treemap.Rect{X: a.listWidth + 1, Y: 6, W: w - a.listWidth - 3, H: a.listHeight})
 	for _, t := range a.tiles {
-		a.drawTile(t, a.entries[t.Index], t.Index == a.selected)
+		a.drawTile(t, a.entries[t.Index], t.Index == a.selected, false)
 	}
 	if len(a.tiles) == 0 {
 		msg := "Waiting for file sizes…"
@@ -631,9 +654,9 @@ func (a *App) drawTree(w, h int) {
 		status = fmt.Sprintf("Hidden: %s (.) · Filter: /%s (Esc clears)", hidden, a.filter)
 	}
 	a.text(2, h-3, w-4, status, base.Foreground(muted))
-	a.text(2, h-2, w-4, "↑↓ select · Enter / double-click open · ← back · f find · v view · t tail · . hidden · ? help · q quit", base.Foreground(accent))
+	a.text(2, h-2, w-4, "Space expand map · Enter open · ← back · f find · v view · t tail · . hidden · ? help · q quit", base.Foreground(accent))
 }
-func (a *App) drawTile(t treemap.Tile, e scan.Entry, selected bool) {
+func (a *App) drawTile(t treemap.Tile, e scan.Entry, selected, wrapName bool) {
 	key := strings.ToLower(filepath.Ext(e.Name))
 	if e.Dir {
 		key = e.Name
@@ -661,6 +684,10 @@ func (a *App) drawTile(t treemap.Tile, e scan.Entry, selected bool) {
 		a.screen.PutStrStyled(t.X+t.W-1, t.Y, "╮", border)
 		a.screen.PutStrStyled(t.X, t.Y+t.H-1, "╰", border)
 		a.screen.PutStrStyled(t.X+t.W-1, t.Y+t.H-1, "╯", border)
+		if wrapName {
+			a.drawSoloName(t, e, style)
+			return
+		}
 		name := e.Name
 		if e.Dir {
 			name += "/"
@@ -682,7 +709,7 @@ func (a *App) drawTile(t treemap.Tile, e scan.Entry, selected bool) {
 }
 func (a *App) drawHelp(w, h int) {
 	a.screen.FillArea(1, 1, w-2, h-2, ' ', base)
-	lines := []string{"KEYBOARD & MOUSE", "", "↑/↓ or j/k   Select an entry; wheel scrolls", "Enter / l   Open selected directory", "← / h / Backspace   Parent directory", "g   Return to the scan root", "Click   Select tile or list entry", "Double-click   Open directory; right-click goes back", "/   Filter current directory     f / Ctrl-F   Search disk", ". / H   Show or hide dotfiles and dot directories (default: shown)", "v   View selected file     t   View from the end (no follow)", "a   Toggle allocated bytes / apparent file sizes", "s   Stop scan and browse partial results", "r   Rescan disk     d   Choose another disk", "Home / End / PgUp / PgDn   Navigate the list", "q / Ctrl-C   Quit     Ctrl-L   Redraw", "", "Tiles represent immediate children, ordered by size.", "Directories open into another treemap. Tiny entries stay in the list.", "Symlinks are not followed; other filesystems are skipped.", "Hard links count once; filesystem overhead/free space is not mapped.", "", "Press any key to close"}
+	lines := []string{"KEYBOARD & MOUSE", "", "↑/↓ or j/k   Select an entry; wheel scrolls", "Enter / l   Open selected directory", "← / h / Backspace   Parent directory", "g   Return to the scan root", "Space   Expand map / next smaller entries     b   Previous map view", "Click   Select tile or list entry", "Double-click   Open directory; right-click goes back", "/   Filter current directory     f / Ctrl-F   Search disk", ". / H   Show or hide dotfiles and dot directories (default: shown)", "v   View selected file     t   View from the end (no follow)", "a   Toggle allocated bytes / apparent file sizes", "s   Stop scan and browse partial results", "r   Rescan disk     d   Choose another disk", "Home / End / PgUp / PgDn   Navigate the list", "q / Ctrl-C   Quit     Ctrl-L   Redraw", "", "Tiles represent immediate children, ordered by size.", "Directories open into another treemap. Tiny entries stay in the list.", "Symlinks are not followed; other filesystems are skipped.", "Hard links count once; filesystem overhead/free space is not mapped.", "", "Press any key to close"}
 	for i, line := range lines {
 		if i+2 >= h-2 {
 			break

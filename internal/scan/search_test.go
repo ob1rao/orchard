@@ -112,7 +112,8 @@ func TestModifiedTimestamp(t *testing.T) {
 	if err := os.WriteFile(path, []byte("x"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	want := time.Date(2001, 2, 3, 4, 5, 6, 0, time.UTC)
+	// Move mtime forward so the filesystem can preserve an earlier birth time.
+	want := time.Now().Add(24 * time.Hour).Truncate(time.Second)
 	if err := os.Chtimes(path, want, want); err != nil {
 		t.Fatal(err)
 	}

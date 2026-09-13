@@ -46,9 +46,13 @@ func wait(t *testing.T, done <-chan struct{}) {
 }
 func TestAccountingAndLinks(t *testing.T) {
 	root := fixture(t)
+	canonicalRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
 	var allocated, apparent uint64
 	seen := map[identity]bool{}
-	err := filepath.Walk(root, func(_ string, i os.FileInfo, err error) error {
+	err = filepath.Walk(root, func(_ string, i os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -86,7 +90,7 @@ func TestAccountingAndLinks(t *testing.T) {
 				if e.Name == "cycle" && e.Dir {
 					t.Fatal("followed symlink")
 				}
-				if e.Node.Path() != filepath.Join(root, e.Name) {
+				if e.Node.Path() != filepath.Join(canonicalRoot, e.Name) {
 					t.Fatal("bad path")
 				}
 			}

@@ -105,11 +105,43 @@ For a smaller initial scan or slower SD card:
 If you report an issue, include the output of `uname -m`, `getconf LONG_BIT`,
 `cat /etc/os-release`, and `"$HOME/.local/bin/orchard" --version`.
 
+## Unmounted disks and volumes
+
+Start with `orchard --unmounted`, or press **u** in the disk picker to include
+unmounted volumes. Press **r** to refresh after plugging in a drive. Mounted
+volumes remain available if discovery fails. Unmounted entries show capacity;
+used and free space become available after mounting.
+
+Select an unmounted filesystem with Enter or a click. Orchard proposes a new
+mountpoint in your home directory. Edit it with Backspace, or press Ctrl-U and
+type another absolute path. The parent must already exist and be writable by
+your user; the mountpoint itself must not exist. Enter mounts and starts the
+scan; Esc cancels without creating anything.
+
+Orchard requests a read-only mount. Linux and Raspberry Pi OS use `lsblk` and
+`mount` from util-linux, with `sudo` for the mount command when you are not root.
+The TUI temporarily restores the terminal for the system password prompt.
+macOS uses the built-in `diskutil` and its system authorization. Orchard does
+not collect passwords. You do not need to run the entire scanner with sudo.
+
+The volume **stays mounted after Orchard exits**. Unmount it using your system's
+disk utility, `sudo umount /your/mountpoint` on Linux, or
+`diskutil unmount /your/mountpoint` on macOS; then remove the empty mountpoint if
+no longer needed. Orchard does not change fstab or create an automatic mount.
+
+Locked/encrypted volumes must be unlocked with system tools first. Raw disks,
+swap, and storage-pool members cannot be browsed directly; Orchard does not
+format, repair, assemble storage pools, or install filesystem drivers. The OS
+must support the filesystem. Read-only mounting is not a forensic write-block
+procedure: some filesystems may replay their journal while mounting, as
+explained in the [Linux mount manual](https://www.man7.org/linux/man-pages/man8/mount.8.html).
+
 ## Navigate
 
 | Action | Keyboard / mouse |
 | --- | --- |
 | Select disk | Up/Down, then Enter; or click a disk |
+| Show/hide unmounted volumes in picker | u |
 | Select entry | Up/Down, j/k, click a tile/list row |
 | Open directory | Enter, l, Right, or double-click |
 | Parent directory | Left, h, Backspace, right-click, or click path bar |
@@ -265,7 +297,7 @@ See the [Linux statx reference](https://www.man7.org/linux/man-pages/man2/statx.
   are omitted from the Linux disk picker. On macOS, select
   `/System/Volumes/Data` to inspect the user-data volume when it appears separately.
 - Unreadable entries are counted and the latest error is displayed. Results remain
-  usable, with an incomplete-scan indication. The scanner never elevates privileges.
+  usable, with an incomplete-scan indication. The scanner never elevates privileges; the optional mount command may request system authorization.
   macOS privacy protections can restrict access even when Unix permissions allow it.
 - Disk selection shows filesystem capacity and free space. The treemap shows
   discoverable file allocations, not free space, snapshots, filesystem overhead,
@@ -274,5 +306,5 @@ See the [Linux statx reference](https://www.man7.org/linux/man-pages/man2/statx.
   per-file reported allocations from matching physical space used. Shared APFS
   container capacities are not additive across volumes.
 - Filesystem changes during scanning can produce partial or inconsistent results;
-  this is a live traversal, not a filesystem snapshot. No files are modified.
+  this is a live traversal, not a filesystem snapshot. Scanning does not modify files.
 

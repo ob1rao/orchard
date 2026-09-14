@@ -18,6 +18,9 @@ jobs:
           go-version-file: go.mod
           cache: true
       - run: go test -race ./...
+      - name: Test mounting an isolated temporary disk image
+        if: runner.os == 'Linux'
+        run: ORCHARD_TEST_MOUNT=1 go test -v ./internal/volumes -run TestMountLoopbackIntegration
       - run: go vet ./...
       - run: go build -o bin/orchard ./cmd/orchard
       - run: ./bin/orchard --scan internal

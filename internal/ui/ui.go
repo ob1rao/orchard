@@ -52,9 +52,16 @@ type App struct {
 	viewer                         *fileView
 	mapPages                       []mapPage
 	mapReturnSelected              *scan.Node
+	showUnmounted, diskLoading     bool
+	diskResults                    chan diskUpdate
+	diskSerial                     uint64
+	diskCancel                     context.CancelFunc
+	mount                          *mountForm
+	mountVolume                    func(context.Context, volumes.Volume, string) (string, error)
+	fatal                          error
 }
 
-func Run(ctx context.Context, path string, apparent bool, opt scan.Options) error {
+func Run(ctx context.Context, path string, apparent, showUnmounted bool, opt scan.Options) error {
 	s, err := tcell.NewScreen()
 	if err != nil {
 		return err
@@ -66,12 +73,14 @@ func Run(ctx context.Context, path string, apparent bool, opt scan.Options) erro
 	s.SetStyle(base)
 	s.HideCursor()
 	s.EnableMouse(tcell.MouseButtonEvents)
-	a := &App{screen: s, picker: true, apparent: apparent, opt: opt}
+	a := &App{screen: s, picker: true, apparent: apparent, opt: opt, showUnmounted: showUnmounted}
 	defer a.stop()
-	a.volumes, err = volumes.List()
-	if err != nil {
-		a.notice = err.Error()
-	}
+	a.reloadDisks(ctx)
+	defer func() {
+		if a.diskCancel != nil {
+			a.diskCancel()
+		}
+	}()
 	if path != "" {
 		if err = a.start(ctx, path); err != nil {
 			return err
@@ -84,6 +93,9 @@ func Run(ctx context.Context, path string, apparent bool, opt scan.Options) erro
 		select {
 		case <-ctx.Done():
 			return nil
+		case update := <-a.diskResults:
+			a.acceptDisks(update)
+			a.draw()
 		case update := <-a.findResults:
 			a.acceptFind(update)
 			a.draw()
@@ -112,6 +124,9 @@ func Run(ctx context.Context, path string, apparent bool, opt scan.Options) erro
 				a.mouse(ctx, e)
 			case *tcell.EventResize:
 				s.Sync()
+			}
+			if a.fatal != nil {
+				return a.fatal
 			}
 			a.draw()
 		}
@@ -204,6 +219,10 @@ func (a *App) key(ctx context.Context, e *tcell.EventKey) bool {
 	if e.Key() == tcell.KeyCtrlC {
 		return true
 	}
+	if a.mount != nil {
+		a.mountKey(ctx, e)
+		return false
+	}
 	if a.viewer != nil {
 		a.viewerKey(e)
 		return false
@@ -276,9 +295,7 @@ func (a *App) key(ctx context.Context, e *tcell.EventKey) bool {
 		}
 	case tcell.KeyEnter, tcell.KeyRight:
 		if a.picker {
-			if len(a.volumes) > 0 {
-				_ = a.start(ctx, a.volumes[a.disk].Path)
-			}
+			a.selectDisk(ctx)
 		} else if len(a.entries) > 0 {
 			a.enter(a.entries[a.selected].Node)
 		}
@@ -286,6 +303,11 @@ func (a *App) key(ctx context.Context, e *tcell.EventKey) bool {
 		a.screen.Sync()
 	case tcell.KeyRune:
 		switch e.Str() {
+		case "u":
+			if a.picker {
+				a.showUnmounted = !a.showUnmounted
+				a.reloadDisks(ctx)
+			}
 		case " ":
 			if !a.picker {
 				a.nextMapPage()
@@ -324,7 +346,7 @@ func (a *App) key(ctx context.Context, e *tcell.EventKey) bool {
 			a.mapPages = nil
 			a.picker = true
 			a.offset = 0
-			a.volumes, _ = volumes.List()
+			a.reloadDisks(ctx)
 		case "a":
 			a.mapPages = nil
 			a.apparent = !a.apparent
@@ -351,12 +373,7 @@ func (a *App) key(ctx context.Context, e *tcell.EventKey) bool {
 			}
 		case "r":
 			if a.picker {
-				var err error
-				a.volumes, err = volumes.List()
-				a.disk = min(a.disk, max(0, len(a.volumes)-1))
-				if err != nil {
-					a.notice = err.Error()
-				}
+				a.reloadDisks(ctx)
 			} else {
 				_ = a.start(ctx, a.tree.Root.Path())
 			}
@@ -365,6 +382,16 @@ func (a *App) key(ctx context.Context, e *tcell.EventKey) bool {
 	return false
 }
 func (a *App) mouse(ctx context.Context, e *tcell.EventMouse) {
+	if a.mount != nil {
+		if e.Buttons() == tcell.ButtonNone {
+			a.mouseDown = false
+		}
+		if e.Buttons()&tcell.Button2 != 0 {
+			a.mount = nil
+			a.mouseDown = false
+		}
+		return
+	}
 	if a.viewer != nil {
 		a.viewerMouse(e)
 		return
@@ -407,7 +434,7 @@ func (a *App) mouse(ctx context.Context, e *tcell.EventMouse) {
 		index := (y-6)/3 + a.offset
 		if y >= 6 && y < 6+a.listHeight*3 && index >= 0 && index < len(a.volumes) {
 			a.disk = index
-			_ = a.start(ctx, a.volumes[index].Path)
+			a.selectDisk(ctx)
 		}
 		return
 	}
@@ -489,7 +516,9 @@ func (a *App) draw() {
 		return
 	}
 	a.text(2, 0, w-4, "ORCHARD  /  see where your space goes", base.Foreground(accent).Bold(true))
-	if a.viewer != nil {
+	if a.mount != nil {
+		a.drawMount(w, h)
+	} else if a.viewer != nil {
 		a.drawViewer(w, h)
 	} else if a.find != nil {
 		a.drawFind(w, h)
@@ -505,7 +534,14 @@ func (a *App) draw() {
 }
 func (a *App) drawPicker(w, h int) {
 	a.text(2, 2, w-4, "Select a disk to explore", base.Bold(true))
-	a.text(2, 3, w-4, "Mounted filesystems · read-only scan · no files are modified", base.Foreground(muted))
+	subtitle := "Mounted filesystems · u show unmounted volumes"
+	if a.showUnmounted {
+		subtitle = "Mounted + unmounted volumes · u hide unmounted"
+	}
+	if a.diskLoading {
+		subtitle += " · discovering…"
+	}
+	a.text(2, 3, w-4, subtitle, base.Foreground(muted))
 	a.listHeight = max(1, (h-10)/3)
 	a.disk = max(0, min(a.disk, len(a.volumes)-1))
 	if a.disk < a.offset {
@@ -528,6 +564,15 @@ func (a *App) drawPicker(w, h int) {
 			marker = "› "
 		}
 		a.text(2, y, w-4, fmt.Sprintf("%s%s  ·  %s  [%s]", marker, v.Path, v.Device, v.Type), style.Bold(true))
+		if v.Path == "" {
+			a.text(2, y, w-4, fmt.Sprintf("%s%s · %s [%s] · UNMOUNTED", marker, v.Device, v.Label, v.Type), style.Bold(true))
+			detail := fmt.Sprintf("%s capacity · Enter / click to choose mountpoint", Bytes(v.Total))
+			if v.MountIssue != "" {
+				detail = Bytes(v.Total) + " capacity · " + v.MountIssue
+			}
+			a.text(4, y+1, w-6, detail, style.Foreground(muted))
+			continue
+		}
 		used := v.Total - min(v.Free, v.Total)
 		a.text(4, y+1, w-6, fmt.Sprintf("%s used / %s total   %.0f%%   ·   %s available", Bytes(used), Bytes(v.Total), percent(used, v.Total), Bytes(v.Available)), style.Foreground(muted))
 	}
@@ -535,7 +580,7 @@ func (a *App) drawPicker(w, h int) {
 		a.text(2, 6, w-4, "No disks found. Try: orchard /path/to/folder", base)
 	}
 	a.text(2, h-3, w-4, a.notice, base.Foreground(tcell.ColorYellow))
-	a.text(2, h-2, w-4, "↑↓ select  ·  Enter / click scan  ·  r refresh  ·  ? help  ·  q quit", base.Foreground(accent))
+	a.text(2, h-2, w-4, "↑↓ select  ·  Enter / click scan or mount  ·  u unmounted  ·  r refresh  ·  ? help  ·  q quit", base.Foreground(accent))
 }
 func (a *App) drawTree(w, h int) {
 	st := a.view.Stats
@@ -709,7 +754,7 @@ func (a *App) drawTile(t treemap.Tile, e scan.Entry, selected, wrapName bool) {
 }
 func (a *App) drawHelp(w, h int) {
 	a.screen.FillArea(1, 1, w-2, h-2, ' ', base)
-	lines := []string{"KEYBOARD & MOUSE", "", "↑/↓ or j/k   Select an entry; wheel scrolls", "Enter / l   Open selected directory", "← / h / Backspace   Parent directory", "g   Return to the scan root", "Space   Expand map / next smaller entries     b   Previous map view", "Click   Select tile or list entry", "Double-click   Open directory; right-click goes back", "/   Filter current directory     f / Ctrl-F   Search disk", ". / H   Show or hide dotfiles and dot directories (default: shown)", "v   View selected file     t   View from the end (no follow)", "a   Toggle allocated bytes / apparent file sizes", "s   Stop scan and browse partial results", "r   Rescan disk     d   Choose another disk", "Home / End / PgUp / PgDn   Navigate the list", "q / Ctrl-C   Quit     Ctrl-L   Redraw", "", "Tiles represent immediate children, ordered by size.", "Directories open into another treemap. Tiny entries stay in the list.", "Symlinks are not followed; other filesystems are skipped.", "Hard links count once; filesystem overhead/free space is not mapped.", "", "Press any key to close"}
+	lines := []string{"KEYBOARD & MOUSE", "", "↑/↓ or j/k   Select an entry; wheel scrolls", "Enter / l   Open selected directory", "← / h / Backspace   Parent directory", "g   Return to the scan root", "Space   Expand map / next smaller entries     b   Previous map view", "Click   Select tile or list entry", "Double-click   Open directory; right-click goes back", "/   Filter current directory     f / Ctrl-F   Search disk", ". / H   Show or hide dotfiles and dot directories (default: shown)", "v   View selected file     t   View from the end (no follow)", "a   Toggle allocated bytes / apparent file sizes", "s   Stop scan and browse partial results", "r   Rescan disk     d   Choose another disk", "u   In disk picker: show/hide unmounted volumes", "Home / End / PgUp / PgDn   Navigate the list", "q / Ctrl-C   Quit     Ctrl-L   Redraw", "", "Tiles represent immediate children, ordered by size.", "Directories open into another treemap. Tiny entries stay in the list.", "Symlinks are not followed; other filesystems are skipped.", "Hard links count once; filesystem overhead/free space is not mapped.", "", "Press any key to close"}
 	for i, line := range lines {
 		if i+2 >= h-2 {
 			break

@@ -175,10 +175,13 @@ with tempfile.TemporaryDirectory(prefix="orchard-pty-") as td:
     finally:
         terminal.close()
 
-terminal = Terminal()
+terminal = Terminal("--unmounted")
 try:
     terminal.expect("Select a disk")
     terminal.expect("Enter / click scan")
+    terminal.expect_screen("Mounted + unmounted volumes")
+    terminal.send(b"u")
+    terminal.expect_screen("Mounted filesystems")
 finally:
     terminal.close()
 print("TUI: disk picker, rendering, treemap paging, keyboard, mouse, filtering, hidden toggle, recursive/regex search, dates, file viewing/tail, resize, and terminal restoration passed")

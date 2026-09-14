@@ -19,7 +19,7 @@ func list() ([]Volume, error) {
 		if s.Blocks == 0 {
 			continue
 		}
-		out = append(out, Volume{unix.ByteSliceToString(s.Mntfromname[:]), unix.ByteSliceToString(s.Mntonname[:]), unix.ByteSliceToString(s.Fstypename[:]), s.Blocks * uint64(s.Bsize), s.Bfree * uint64(s.Bsize), s.Bavail * uint64(s.Bsize)})
+		out = append(out, Volume{Device: unix.ByteSliceToString(s.Mntfromname[:]), Path: unix.ByteSliceToString(s.Mntonname[:]), Type: unix.ByteSliceToString(s.Fstypename[:]), Total: s.Blocks * uint64(s.Bsize), Free: s.Bfree * uint64(s.Bsize), Available: s.Bavail * uint64(s.Bsize)})
 	}
 	return out, nil
 }

@@ -83,3 +83,14 @@ With Pillow, pyte, fontconfig, and DejaVu Sans Mono installed:
 make build
 python3 scripts/capture_preview.py
 ```
+
+Unmounted-volume discovery and mount failures are covered by fixtures and fake
+command runners. On Linux CI, the opt-in mount test also creates a temporary ext4 image, attaches
+it to a loop device, mounts it read-only, checks its contents, and detaches it.
+This opt-in test requires passwordless sudo, util-linux, e2fsprogs, and udev;
+ordinary tests never mount anything. Physical USB disks and macOS mounting still
+need device testing.
+
+```sh
+ORCHARD_TEST_MOUNT=1 go test -v ./internal/volumes -run TestMountLoopbackIntegration
+```

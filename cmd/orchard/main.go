@@ -20,6 +20,7 @@ func main() { os.Exit(run()) }
 func run() int {
 	flags := flag.NewFlagSet("orchard", flag.ContinueOnError)
 	apparent := flags.Bool("apparent", false, "show logical file lengths instead of allocated blocks")
+	unmounted := flags.Bool("unmounted", false, "include unmounted volumes in the disk picker")
 	headless := flags.Bool("scan", false, "scan a path and print a JSON summary without a TUI")
 	workers := flags.Int("workers", scan.DefaultWorkers(), "directory workers (1-64)")
 	ver := flags.Bool("version", false, "print version")
@@ -96,7 +97,7 @@ func run() int {
 		}
 		return 0
 	}
-	if err := ui.Run(ctx, path, *apparent, opt); err != nil {
+	if err := ui.Run(ctx, path, *apparent, *unmounted, opt); err != nil {
 		fmt.Fprintln(os.Stderr, "orchard:", err)
 		return 1
 	}

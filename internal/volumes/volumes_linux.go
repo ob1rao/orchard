@@ -45,7 +45,7 @@ func list() ([]Volume, error) {
 			continue
 		}
 		seen[p] = true
-		out = append(out, Volume{unescape(b[1]), p, b[0], st.Blocks * uint64(st.Bsize), st.Bfree * uint64(st.Bsize), st.Bavail * uint64(st.Bsize)})
+		out = append(out, Volume{Device: unescape(b[1]), Path: p, Type: b[0], Total: st.Blocks * uint64(st.Bsize), Free: st.Bfree * uint64(st.Bsize), Available: st.Bavail * uint64(st.Bsize)})
 	}
 	return out, s.Err()
 }

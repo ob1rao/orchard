@@ -17,9 +17,10 @@ No GitHub login, Go compiler, or sudo needed. Start it with:
 
 ## Explore your storage
 
-Select a disk and watch the treemap fill as Orchard scans. Bigger tiles mean more space used. Open a directory to see what's inside—Orchard never modifies your files.
+Select a disk and watch the treemap fill as Orchard scans. Bigger tiles mean more space used. Open a directory to see what's inside—Scans and file viewing are read-only.
 
 - Browse files and sizes with the keyboard or mouse.
+- Use `orchard --unmounted` to select and mount an unmounted volume read-only.
 - Search across the disk using plain text or regex.
 - View modified and created dates when available.
 - Show or hide dotfiles; they're included by default.
@@ -35,6 +36,7 @@ To scan a particular folder:
 | Action | Control |
 | --- | --- |
 | Select / scroll | ↑ ↓ or mouse wheel |
+| Show unmounted volumes in disk picker | u |
 | Open directory | Enter or double-click |
 | Expand map / page smaller entries | Space; b goes back |
 | Go back | Backspace or right-click |

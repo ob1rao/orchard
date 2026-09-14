@@ -579,6 +579,17 @@ func (a *App) drawPicker(w, h int) {
 	if len(a.volumes) == 0 {
 		a.text(2, 6, w-4, "No disks found. Try: orchard /path/to/folder", base)
 	}
+	unmounted := 0
+	for _, v := range a.volumes {
+		if v.Path == "" {
+			unmounted++
+		}
+	}
+	first := 0
+	if len(a.volumes) > 0 {
+		first = a.offset + 1
+	}
+	a.text(2, h-4, w-4, fmt.Sprintf("Volumes %d–%d of %d · %d unmounted", first, min(a.offset+a.listHeight, len(a.volumes)), len(a.volumes), unmounted), base.Foreground(muted))
 	a.text(2, h-3, w-4, a.notice, base.Foreground(tcell.ColorYellow))
 	a.text(2, h-2, w-4, "↑↓ select  ·  Enter / click scan or mount  ·  u unmounted  ·  r refresh  ·  ? help  ·  q quit", base.Foreground(accent))
 }

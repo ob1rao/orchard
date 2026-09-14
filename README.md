@@ -6,7 +6,10 @@ A fast, visual disk-usage explorer for your terminal. Works on **Linux, macOS, a
 curl -fsSL https://raw.githubusercontent.com/ob1rao/orchard/main/install.sh | sh
 ```
 
-No GitHub login, Go compiler, or sudo needed. Start it with:
+No GitHub login, Go compiler, or sudo needed. On Linux, including Raspberry Pi OS,
+the installer saves the install directory in your Bash, Zsh, or POSIX shell startup
+files so future shell sessions can run `orchard`. For the current terminal, run
+the `export PATH=...` command printed by the installer, or start it directly with:
 
 ```sh
 "$HOME/.local/bin/orchard"

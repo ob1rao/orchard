@@ -57,6 +57,44 @@ cp "$tmp/orchard" "$staged"
 chmod 755 "$staged"
 mv -f "$staged" "$DEST/orchard"
 staged=''
+# Use an absolute, shell-quoted path so spaces and shell metacharacters are safe.
+DEST=$(cd "$DEST" && pwd -P)
+quoted_dest=$(printf '%s' "$DEST" | sed "s/'/'\\\\''/g")
+path_command="export PATH='$quoted_dest':\$PATH"
+if [ "$os" = linux ]; then
+ # Bash login shells read only the first existing profile in this order.
+ # Interactive non-login shells (including desktop terminals) read .bashrc.
+ shell_name=${SHELL:-sh}
+ case "${shell_name##*/}" in
+  bash)
+   profile="$HOME/.profile"
+   if [ -f "$HOME/.bash_profile" ]; then profile="$HOME/.bash_profile"
+   elif [ -f "$HOME/.bash_login" ]; then profile="$HOME/.bash_login"; fi
+   startup_files="$profile
+$HOME/.bashrc"
+   ;;
+  zsh) startup_files="${ZDOTDIR:-$HOME}/.zshrc" ;;
+  sh|dash|'') startup_files="$HOME/.profile" ;;
+  *) startup_files='' ;;
+ esac
+ # A guarded entry is safe when both a profile and an rc file are sourced.
+ path_entry="case \":\$PATH:\" in *:'$quoted_dest':*) ;; *) $path_command ;; esac"
+ printf '%s\n' "$startup_files" | while IFS= read -r profile; do
+  [ -n "$profile" ] || continue
+  if ! grep -Fqx "$path_entry" "$profile" 2>/dev/null; then
+   if printf '\n# Added by the orchard installer.\n%s\n' "$path_entry" >> "$profile"; then
+    printf 'Updated PATH in %s\n' "$profile"
+   else
+    printf 'Could not update %s; add this manually: %s\n' "$profile" "$path_command" >&2
+   fi
+  fi
+ done
+fi
 printf '\nInstalled %s\n' "$DEST/orchard"
-case ":$PATH:" in *":$DEST:"*) ;; *) printf 'Add to your shell profile: export PATH="%s:$PATH"\n' "$DEST" ;; esac
+case ":$PATH:" in *":$DEST:"*) ;; *)
+ printf 'For this terminal, run: %s\n' "$path_command"
+ if [ "$os" != linux ] || [ -z "$startup_files" ]; then
+  printf 'Also add that command to your shell profile for future sessions.\n'
+ fi
+ ;; esac
 printf 'Run orchard to select a disk, or orchard /path/to/folder.\n'

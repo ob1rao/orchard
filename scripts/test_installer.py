@@ -10,11 +10,14 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 
-def check(system, machine, arch, private=False, corrupt=False, bits="64"):
+def check(system, machine, arch, private=False, corrupt=False, bits="64", shell="bash", login=".profile"):
     with tempfile.TemporaryDirectory(prefix="orchard install test ") as td:
-        root = Path(td)
-        mocks, fixtures, dest = root / "mocks", root / "fixtures", root / "install dir"
+        root = Path(td).resolve()
+        mocks, fixtures, dest = root / "mocks", root / "fixtures", root / "install dir's $literal `name`"
         mocks.mkdir(); fixtures.mkdir(); dest.mkdir()
+        home = root / "home"
+        home.mkdir()
+        (home / login).write_text("# Existing configuration\n")
         name = f"orchard_{system.lower() if system == 'Linux' else 'darwin'}_{arch}.tar.gz"
         archive = fixtures / name
         payload = b"#!/bin/sh\nprintf 'orchard fixture\\n'\n"
@@ -49,6 +52,7 @@ cp "$FIXTURES/"* "$dest/"
         for name_, content in scripts.items():
             p = mocks / name_; p.write_text(content); p.chmod(0o755)
         env = dict(os.environ, PATH=f"{mocks}:/usr/bin:/bin", FIXTURES=str(fixtures),
+                   HOME=str(home), SHELL=f"/bin/{shell}", ZDOTDIR=str(home),
                    PRIVATE="yes" if private else "no", ORCHARD_INSTALL_DIR=str(dest),
                    ORCHARD_VERSION="v0.1.0", ORCHARD_REPO="ob1rao/orchard")
         result = subprocess.run(["sh", str(ROOT / "install.sh")], env=env, capture_output=True, text=True)
@@ -59,6 +63,21 @@ cp "$FIXTURES/"* "$dest/"
             assert result.returncode == 0, result.stdout + result.stderr
             assert os.access(dest / "orchard", os.X_OK)
             assert (dest / "orchard").read_bytes() == payload
+            if system == "Linux":
+                profiles = [home / login, home / ".bashrc"] if shell == "bash" else [home / (".zshrc" if shell == "zsh" else ".profile")]
+                before = [p.read_text() for p in profiles]
+                repeat = subprocess.run(["sh", str(ROOT / "install.sh")], env=env, capture_output=True, text=True)
+                assert repeat.returncode == 0, repeat.stderr
+                assert before == [p.read_text() for p in profiles], "duplicate PATH entries on reinstall"
+                for profile in profiles:
+                    probe = subprocess.run(["sh", "-c", '. "$1"; . "$1"; command -v orchard; printf "%s\\n" "$PATH"', "sh", str(profile)], env=env, capture_output=True, text=True)
+                    assert probe.returncode == 0, probe.stderr
+                    lines = probe.stdout.splitlines()
+                    assert lines[0] == str(dest / "orchard"), probe.stdout
+                    assert lines[1].split(":").count(str(dest)) == 1, probe.stdout
+            else:
+                assert (home / login).read_text() == "# Existing configuration\n"
+                assert not (home / ".bashrc").exists()
 
 for system, machine, arch in [("Linux", "x86_64", "amd64"), ("Linux", "aarch64", "arm64"),
                              ("Linux", "armv6l", "armv6"), ("Linux", "armv7l", "armv7"),
@@ -69,4 +88,8 @@ check("Linux", "armv8l", "armv7", bits="32")
 check("Linux", "arm64", "arm64")
 check("Linux", "x86_64", "amd64", private=True)
 check("Linux", "x86_64", "amd64", corrupt=True)
-print("Installer: all 11 platform/authentication/checksum cases passed")
+for login in (".bash_profile", ".bash_login"):
+    check("Linux", "aarch64", "arm64", login=login)
+for shell in ("sh", "zsh"):
+    check("Linux", "armv7l", "armv7", shell=shell)
+print("Installer: all 15 platform/authentication/checksum/PATH cases passed")

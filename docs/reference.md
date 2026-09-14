@@ -166,7 +166,7 @@ is accessible from the keyboard. Press `?` for the full control reference; a
 larger terminal fits more help text.
 
 Tiles represent the **immediate children of the current directory**, with area
-proportional to their size. Enter a directory for a new map of its children.
+proportional to their size. Enter a directory for a new treemap of its children.
 File extensions share colors; directory colors are stable by name. The bright
 border marks the selected entry. The sidebar lists every individual file and directory directly inside the current
 directory, with a right-aligned size column. Scroll with the arrow keys, mouse
@@ -176,17 +176,19 @@ bytes, MB = 1,000,000 bytes, and GB = 1,000,000,000 bytes. Files below 1 KB
 are shown in bytes.
 
 Hidden files and directories (names starting with `.`) are included by default.
-Press `.` or `H` to show or hide them in both the sidebar and map. The footer
+Press `.` or `H` to show or hide them in both the sidebar and treemap. The footer
 shows the current setting, which persists while navigating or rescanning during
 the session. This is a display toggle: scanning still includes hidden entries,
 and directory totals still include hidden data. A name filter limits both
-the list and the map; the directory total still represents the whole directory.
-The map can rearrange during scanning as sizes become known.
+the list and the treemap; the directory total still represents the whole directory.
+The treemap can rearrange during scanning as sizes become known.
 
 ## Disk free space and unaccounted usage
 
-The treemap header shows disk free space by default. Press **i** to hide or
-restore this summary in either the split or expanded map. On wider terminals it
+The treemap shows a black **Disk free** tile and a disk-space header by default.
+The tile occupies the filesystem’s free-space percentage; the remaining treemap
+shows the current directory’s entries, including in expanded and paged views.
+Press **i** to hide or restore both the tile and summary. On wider terminals it
 also shows total capacity and space available to an ordinary user; available
 space can be lower than free space because some blocks are reserved. Values
 refresh in the background every five seconds while the summary is enabled.
@@ -209,7 +211,7 @@ containing the scan root, not the sum of partitions on a physical drive.
 
 ## Expand and page the treemap
 
-Press **Space** to expand the map across the terminal, hiding the sidebar.
+Press **Space** to expand the treemap across the terminal, hiding the sidebar.
 Press Space again to start at the first entry whose full name and size do not
 fit, including entries too small to draw. Larger entries disappear and the
 remaining entries expand, keeping their relative sizes. Continue until the
@@ -222,7 +224,7 @@ wrapped name before paging continues. Exceptionally long names can still be
 clipped in a small terminal. Zero-byte entries appear on a separate, labeled
 page with equal tiles; those tile areas do not represent disk usage.
 
-Arrow keys, the mouse, Enter, search, and file viewing work in the expanded map.
+Arrow keys, the mouse, Enter, search, and file viewing work in the expanded treemap.
 Page anchors follow their entries as scan results reorder. Changing directory,
 filter, hidden visibility, or size metric returns to the split view. In the
 file viewer, Space and b continue to page through file contents.
@@ -296,7 +298,7 @@ Results reflect the scan, not subsequent filesystem changes; rescan with `r`
 after closing search to refresh the index.
 
 The normal directory view shows **modified and created timestamps for the
-selected entry** below the map, with date columns in the sidebar when the
+selected entry** below the treemap, with date columns in the sidebar when the
 terminal is at least 150 columns wide. Dates use the local timezone, to the
 nearest second. Directory timestamps describe the directory itself, not the
 newest descendant's timestamp.
@@ -325,7 +327,8 @@ See the [Linux statx reference](https://www.man7.org/linux/man-pages/man2/statx.
   usable, with an incomplete-scan indication. The scanner never elevates privileges; the optional mount command may request system authorization.
   macOS privacy protections can restrict access even when Unix permissions allow it.
 - Disk selection shows filesystem capacity and free space. The treemap shows
-  discoverable file allocations, not free space, snapshots, filesystem overhead,
+  a black disk-free tile alongside discoverable file allocations. File tiles
+  exclude snapshots, filesystem overhead,
   deleted-but-open files, or inaccessible data. Directory metadata is included
   in totals but has no separate tile. APFS clones/reflinks/compression can prevent
   per-file reported allocations from matching physical space used. Shared APFS
@@ -333,3 +336,27 @@ See the [Linux statx reference](https://www.man7.org/linux/man-pages/man2/statx.
 - Filesystem changes during scanning can produce partial or inconsistent results;
   this is a live traversal, not a filesystem snapshot. Scanning does not modify files.
 
+
+
+## Storage picker
+
+The opening screen groups volumes by their reported parent disk. Each volume
+shows the disk → partition → container/device chain when the OS supplies it.
+Linux and Raspberry Pi OS use `lsblk`; macOS uses `diskutil`. Network filesystems
+and storage with unavailable ancestry remain selectable with an explicit unknown
+label. Press **u** to include unmounted volumes; **r** refreshes discovery.
+
+Disk and volume bars share one linear capacity scale across the list. Green
+solid cells show used space, black-backed light cells show filesystem free space,
+and `?` shows unknown usage. Tiny capacities occupy at least one terminal cell.
+Disk summaries count each visible filesystem or shared APFS container once;
+unmounted, undiscovered, and unallocated capacity stays unknown. APFS volume
+rows show shared container capacity, not independently additive volume sizes.
+Multi-disk storage is identified without assigning its capacity to one disk.
+
+The compact terminal-art Orchard tree and wordmark appear on taller terminals.
+Wide terminals add a three-disk overview beside the wordmark; additional disks
+remain available in the scrolling list.
+A small discovery indicator animates while storage information loads; there is
+no splash-screen delay. Short terminals use a one-line wordmark. Arrow keys,
+Page Up/Down, Home/End, and mouse selection work throughout the grouped list.

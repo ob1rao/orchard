@@ -25,7 +25,7 @@ Select a disk and watch the treemap fill as Orchard scans. Bigger tiles mean mor
 - Browse files and sizes with the keyboard or mouse.
 - Use `orchard --unmounted` to select and mount an unmounted volume read-only.
 - Search across the disk using plain text or regex.
-- See disk free space and an estimate of usage outside the scan.
+- See disk free space as a black treemap tile by default, plus an estimate of usage outside the scan.
 - View modified and created dates when available.
 - Show or hide dotfiles; they're included by default.
 
@@ -42,7 +42,7 @@ To scan a particular folder:
 | Select / scroll | ↑ ↓ or mouse wheel |
 | Show unmounted volumes in disk picker | u |
 | Open directory | Enter or double-click |
-| Expand map / page smaller entries | Space; b goes back |
+| Expand treemap / page smaller entries | Space; b goes back |
 | Go back | Backspace or right-click |
 | Search the disk | f or Ctrl-F; Tab toggles regex |
 | View selected file / start at end | v / t |

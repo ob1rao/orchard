@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ob1rao/orchard/internal/scan"
+	"github.com/ob1rao/orchard/internal/treemap"
 	"github.com/ob1rao/orchard/internal/volumes"
 )
 
@@ -80,4 +82,35 @@ func (a *App) drawDiskSpace(w int) {
 		}
 	}
 	a.text(2, 1, w-4, text, base.Foreground(accent))
+}
+
+// The free tile represents filesystem capacity. The remaining rectangle is a
+// directory detail view, so navigating or changing size metrics cannot change
+// the fraction shown as free. Negative indices never select filesystem nodes.
+const freeSpaceTile = -1
+
+func (a *App) layoutWithFreeSpace(weights []uint64, bounds treemap.Rect) []treemap.Tile {
+	if a.hideDiskSpace || !a.spaceReady || a.spaceErr != nil || a.diskSpace.Total == 0 || a.diskSpace.Free == 0 {
+		return treemap.Layout(weights, bounds)
+	}
+	free := min(a.diskSpace.Free, a.diskSpace.Total)
+	regions := treemap.Layout([]uint64{a.diskSpace.Total - free, free}, bounds)
+	var tiles []treemap.Tile
+	for _, region := range regions {
+		if region.Index == 0 {
+			tiles = append(tiles, treemap.Layout(weights, region.Rect)...)
+		} else {
+			region.Index = freeSpaceTile
+			tiles = append(tiles, region)
+		}
+	}
+	return tiles
+}
+
+func (a *App) drawMapTile(t treemap.Tile, wrapName bool) {
+	if t.Index == freeSpaceTile {
+		a.drawTile(t, scan.Entry{Name: "Disk free", Size: min(a.diskSpace.Free, a.diskSpace.Total)}, false, false)
+		return
+	}
+	a.drawTile(t, a.entries[t.Index], t.Index == a.selected, wrapName)
 }

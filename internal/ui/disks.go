@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"unicode"
@@ -43,6 +44,9 @@ func (a *App) reloadDisks(ctx context.Context) {
 		} else {
 			v, err = volumes.List()
 		}
+		var topologyErr error
+		v, topologyErr = volumes.WithTopology(ctx, v)
+		err = errors.Join(err, topologyErr)
 		select {
 		case results <- diskUpdate{serial, v, err}:
 		case <-ctx.Done():

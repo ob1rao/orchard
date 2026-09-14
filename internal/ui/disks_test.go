@@ -96,7 +96,12 @@ func TestUnmountedPickerDoesNotInventUsedSpace(t *testing.T) {
 	screen := newTestScreen(120, 32)
 	a := &App{screen: screen, picker: true, showUnmounted: true, volumes: []volumes.Volume{{Device: "/dev/test", Type: "ext4", Total: 1000000, Label: "Backup"}}}
 	a.draw()
-	if !strings.Contains(string(screen.rows[6]), "UNMOUNTED") || !strings.Contains(string(screen.rows[7]), "1.0 MB capacity") || strings.Contains(string(screen.rows[7]), "used") {
+	var text strings.Builder
+	for _, row := range screen.rows {
+		text.WriteString(string(row))
+		text.WriteByte('\n')
+	}
+	if !strings.Contains(text.String(), "UNMOUNTED") || !strings.Contains(text.String(), "1.0 MB capacity · usage unknown until mounted") {
 		t.Fatal("unmounted capacity rendered as known usage")
 	}
 }

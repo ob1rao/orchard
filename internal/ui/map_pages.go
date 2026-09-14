@@ -51,9 +51,11 @@ func (a *App) mapLayout(w, h int) []treemap.Tile {
 			weights[i] = 1
 		}
 	}
-	tiles := treemap.Layout(weights, treemap.Rect{X: 2, Y: 5, W: w - 4, H: h - 10})
+	tiles := a.layoutWithFreeSpace(weights, treemap.Rect{X: 2, Y: 5, W: w - 4, H: h - 10})
 	for i := range tiles {
-		tiles[i].Index += lo
+		if tiles[i].Index != freeSpaceTile {
+			tiles[i].Index += lo
+		}
 	}
 	return tiles
 }
@@ -76,6 +78,9 @@ func (a *App) firstClipped(tiles []treemap.Tile) int {
 	lo, hi := a.mapBounds()
 	readable := make([]bool, hi-lo)
 	for _, t := range tiles {
+		if t.Index == freeSpaceTile {
+			continue
+		}
 		readable[t.Index-lo] = readableTile(t, a.entries[t.Index])
 	}
 	for i, ok := range readable {
@@ -153,7 +158,7 @@ func (a *App) drawFullMap(w, h int) {
 	lo, hi := a.mapBounds()
 	a.selected = max(lo, min(a.selected, max(lo, hi-1)))
 	a.tiles = a.mapLayout(w, h)
-	title := fmt.Sprintf("FULL MAP · page %d · entries %d–%d of %d", len(a.mapPages), min(lo+1, hi), hi, len(a.entries))
+	title := fmt.Sprintf("FULL TREEMAP · page %d · entries %d–%d of %d", len(a.mapPages), min(lo+1, hi), hi, len(a.entries))
 	if lo < hi && a.entries[lo].Size == 0 {
 		title += " · zero bytes: equal tiles"
 	}
@@ -162,9 +167,9 @@ func (a *App) drawFullMap(w, h int) {
 	}
 	a.text(2, 4, w-4, title, base.Foreground(muted))
 	for _, t := range a.tiles {
-		a.drawTile(t, a.entries[t.Index], t.Index == a.selected, hi-lo == 1)
+		a.drawMapTile(t, hi-lo == 1)
 	}
-	if lo == hi {
+	if lo == hi && len(a.tiles) == 0 {
 		a.text(3, 6, w-6, "No entries here", base.Foreground(muted))
 	}
 	if a.selected < len(a.entries) {

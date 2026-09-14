@@ -66,6 +66,8 @@ type App struct {
 	spaceSerial                    uint64
 	spaceNext                      time.Time
 	spaceResults                   chan spaceUpdate
+	pickerRows                     map[int]int
+	brandFrame                     int
 }
 
 func Run(ctx context.Context, path string, apparent, showUnmounted bool, opt scan.Options) error {
@@ -112,6 +114,10 @@ func Run(ctx context.Context, path string, apparent, showUnmounted bool, opt sca
 		case <-tick.C:
 			a.pollSpace(ctx, time.Now())
 			redraw := false
+			if a.picker && a.diskLoading {
+				a.brandFrame++
+				redraw = true
+			}
 			if a.tree != nil && !a.view.Stats.Done {
 				a.refresh()
 				redraw = true
@@ -451,8 +457,8 @@ func (a *App) mouse(ctx context.Context, e *tcell.EventMouse) {
 		return
 	}
 	if a.picker {
-		index := (y-6)/3 + a.offset
-		if y >= 6 && y < 6+a.listHeight*3 && index >= 0 && index < len(a.volumes) {
+		index, hit := a.pickerRows[y]
+		if hit && index >= 0 && index < len(a.volumes) {
 			a.disk = index
 			a.selectDisk(ctx)
 		}
@@ -535,7 +541,9 @@ func (a *App) draw() {
 		s.Show()
 		return
 	}
-	a.text(2, 0, w-4, "ORCHARD  /  see where your space goes", base.Foreground(accent).Bold(true))
+	if !a.picker || a.mount != nil {
+		a.text(2, 0, w-4, "ORCHARD  /  see where your space goes", base.Foreground(accent).Bold(true))
+	}
 	if a.mount != nil {
 		a.drawMount(w, h)
 	} else if a.viewer != nil {
@@ -551,67 +559,6 @@ func (a *App) draw() {
 		a.drawHelp(w, h)
 	}
 	s.Show()
-}
-func (a *App) drawPicker(w, h int) {
-	a.text(2, 2, w-4, "Select a disk to explore", base.Bold(true))
-	subtitle := "Mounted filesystems · u show unmounted volumes"
-	if a.showUnmounted {
-		subtitle = "Mounted + unmounted volumes · u hide unmounted"
-	}
-	if a.diskLoading {
-		subtitle += " · discovering…"
-	}
-	a.text(2, 3, w-4, subtitle, base.Foreground(muted))
-	a.listHeight = max(1, (h-10)/3)
-	a.disk = max(0, min(a.disk, len(a.volumes)-1))
-	if a.disk < a.offset {
-		a.offset = a.disk
-	}
-	if a.disk >= a.offset+a.listHeight {
-		a.offset = a.disk - a.listHeight + 1
-	}
-	for row := 0; row < a.listHeight && a.offset+row < len(a.volumes); row++ {
-		i := a.offset + row
-		v := a.volumes[i]
-		y := 6 + row*3
-		style := base
-		if i == a.disk {
-			style = style.Background(tcell.NewHexColor(0x203448))
-			a.screen.FillArea(1, y, w-2, 2, ' ', style)
-		}
-		marker := "  "
-		if i == a.disk {
-			marker = "› "
-		}
-		a.text(2, y, w-4, fmt.Sprintf("%s%s  ·  %s  [%s]", marker, v.Path, v.Device, v.Type), style.Bold(true))
-		if v.Path == "" {
-			a.text(2, y, w-4, fmt.Sprintf("%s%s · %s [%s] · UNMOUNTED", marker, v.Device, v.Label, v.Type), style.Bold(true))
-			detail := fmt.Sprintf("%s capacity · Enter / click to choose mountpoint", Bytes(v.Total))
-			if v.MountIssue != "" {
-				detail = Bytes(v.Total) + " capacity · " + v.MountIssue
-			}
-			a.text(4, y+1, w-6, detail, style.Foreground(muted))
-			continue
-		}
-		used := v.Total - min(v.Free, v.Total)
-		a.text(4, y+1, w-6, fmt.Sprintf("%s used / %s total   %.0f%%   ·   %s available", Bytes(used), Bytes(v.Total), percent(used, v.Total), Bytes(v.Available)), style.Foreground(muted))
-	}
-	if len(a.volumes) == 0 {
-		a.text(2, 6, w-4, "No disks found. Try: orchard /path/to/folder", base)
-	}
-	unmounted := 0
-	for _, v := range a.volumes {
-		if v.Path == "" {
-			unmounted++
-		}
-	}
-	first := 0
-	if len(a.volumes) > 0 {
-		first = a.offset + 1
-	}
-	a.text(2, h-4, w-4, fmt.Sprintf("Volumes %d–%d of %d · %d unmounted", first, min(a.offset+a.listHeight, len(a.volumes)), len(a.volumes), unmounted), base.Foreground(muted))
-	a.text(2, h-3, w-4, a.notice, base.Foreground(tcell.ColorYellow))
-	a.text(2, h-2, w-4, "↑↓ select  ·  Enter / click scan or mount  ·  u unmounted  ·  r refresh  ·  ? help  ·  q quit", base.Foreground(accent))
 }
 func (a *App) drawTree(w, h int) {
 	a.drawDiskSpace(w)
@@ -655,7 +602,7 @@ func (a *App) drawTree(w, h int) {
 		a.text(a.listWidth-24, 5, 10, "MODIFIED", base.Foreground(muted))
 		a.text(a.listWidth-12, 5, 10, "CREATED", base.Foreground(muted))
 	}
-	title := "SPACE MAP"
+	title := "TREEMAP"
 	if a.filter != "" || a.hideHidden {
 		title += " · filtered"
 	}
@@ -690,11 +637,17 @@ func (a *App) drawTree(w, h int) {
 	for i, e := range a.entries {
 		weights[i] = e.Size
 	}
-	a.tiles = treemap.Layout(weights, treemap.Rect{X: a.listWidth + 1, Y: 6, W: w - a.listWidth - 3, H: a.listHeight})
+	a.tiles = a.layoutWithFreeSpace(weights, treemap.Rect{X: a.listWidth + 1, Y: 6, W: w - a.listWidth - 3, H: a.listHeight})
 	for _, t := range a.tiles {
-		a.drawTile(t, a.entries[t.Index], t.Index == a.selected, false)
+		a.drawMapTile(t, false)
 	}
-	if len(a.tiles) == 0 {
+	fileTiles := 0
+	for _, tile := range a.tiles {
+		if tile.Index >= 0 {
+			fileTiles++
+		}
+	}
+	if fileTiles == 0 {
 		msg := "Waiting for file sizes…"
 		if st.Done {
 			msg = "No measurable entries here"
@@ -702,7 +655,11 @@ func (a *App) drawTree(w, h int) {
 		if a.filter != "" {
 			msg = "No measurable matches"
 		}
-		a.text(a.listWidth+3, 8, w-a.listWidth-6, msg, base.Foreground(muted))
+		if len(a.tiles) > 0 {
+			a.text(2, 8, a.listWidth-4, msg, base.Foreground(muted))
+		} else {
+			a.text(a.listWidth+3, 8, w-a.listWidth-6, msg, base.Foreground(muted))
+		}
 	}
 	if len(a.entries) > 0 {
 		e := a.entries[a.selected]
@@ -731,7 +688,7 @@ func (a *App) drawTree(w, h int) {
 		status = fmt.Sprintf("Hidden: %s (.) · Filter: /%s (Esc clears)", hidden, a.filter)
 	}
 	a.text(2, h-3, w-4, status, base.Foreground(muted))
-	a.text(2, h-2, w-4, "Space expand · Enter open · ← back · i disk space · f find · v view · t tail · ? help · q quit", base.Foreground(accent))
+	a.text(2, h-2, w-4, "Space treemap · Enter open · ← back · i disk space · f find · v view · t tail · ? help · q quit", base.Foreground(accent))
 }
 func (a *App) drawTile(t treemap.Tile, e scan.Entry, selected, wrapName bool) {
 	key := strings.ToLower(filepath.Ext(e.Name))
@@ -742,6 +699,9 @@ func (a *App) drawTile(t treemap.Tile, e scan.Entry, selected, wrapName bool) {
 	_, _ = hash.Write([]byte(key))
 	// Keep the hash unsigned: converting to int can go negative on 32-bit Pis.
 	color := tcell.NewHexColor(palette[hash.Sum32()%uint32(len(palette))])
+	if t.Index == freeSpaceTile {
+		color = tcell.NewHexColor(0x000000)
+	}
 	style := base.Background(color)
 	border := style.Foreground(tcell.NewHexColor(0xa4b9cb))
 	if selected {
@@ -786,7 +746,7 @@ func (a *App) drawTile(t treemap.Tile, e scan.Entry, selected, wrapName bool) {
 }
 func (a *App) drawHelp(w, h int) {
 	a.screen.FillArea(1, 1, w-2, h-2, ' ', base)
-	lines := []string{"KEYBOARD & MOUSE", "", "↑/↓ or j/k   Select an entry; wheel scrolls", "Enter / l   Open selected directory", "← / h / Backspace   Parent directory", "g   Return to the scan root", "Space   Expand map / next smaller entries     b   Previous map view", "Click   Select tile or list entry", "Double-click   Open directory; right-click goes back", "/   Filter current directory     f / Ctrl-F   Search disk", ". / H   Show or hide dotfiles and dot directories (default: shown)", "v   View selected file     t   View from the end (no follow)", "a   Toggle allocated bytes / apparent file sizes", "i   Show/hide disk free space and unaccounted usage estimate", "s   Stop scan and browse partial results", "r   Rescan disk     d   Choose another disk", "u   In disk picker: show/hide unmounted volumes", "Home / End / PgUp / PgDn   Navigate the list", "q / Ctrl-C   Quit     Ctrl-L   Redraw", "", "Other usage includes inaccessible data, overhead and data outside the scan.", "Its byte count is an estimate, not a measure of permission errors.", "Tiles represent immediate children, ordered by size.", "Directories open into another treemap. Tiny entries stay in the list.", "Symlinks are not followed; other filesystems are skipped.", "Hard links count once; filesystem overhead/free space is not mapped.", "", "Press any key to close"}
+	lines := []string{"KEYBOARD & MOUSE", "", "↑/↓ or j/k   Select an entry; wheel scrolls", "Enter / l   Open selected directory", "← / h / Backspace   Parent directory", "g   Return to the scan root", "Space   Expand treemap / next smaller entries     b   Previous treemap view", "Click   Select tile or list entry", "Double-click   Open directory; right-click goes back", "/   Filter current directory     f / Ctrl-F   Search disk", ". / H   Show or hide dotfiles and dot directories (default: shown)", "v   View selected file     t   View from the end (no follow)", "a   Toggle allocated bytes / apparent file sizes", "i   Show/hide disk free space and unaccounted usage estimate", "s   Stop scan and browse partial results", "r   Rescan disk     d   Choose another disk", "u   In disk picker: show/hide unmounted volumes", "Home / End / PgUp / PgDn   Navigate the list", "q / Ctrl-C   Quit     Ctrl-L   Redraw", "", "Other usage includes inaccessible data, overhead and data outside the scan.", "Its byte count is an estimate, not a measure of permission errors.", "Tiles represent immediate children, ordered by size.", "Directories open into another treemap. Tiny entries stay in the list.", "Symlinks are not followed; other filesystems are skipped.", "Hard links count once; black tiles show disk free space (i toggles).", "", "Press any key to close"}
 	for i, line := range lines {
 		if i+2 >= h-2 {
 			break

@@ -19,7 +19,7 @@ through the ancestors. A mutex protects brief snapshot copies; sorting happens
 outside the lock. The terminal refreshes live results five times per second and
 stops periodic redraws once scanning finishes. Tcell sends terminal-cell diffs.
 
-The map uses balanced binary weighted partitioning, adjusted for terminal cells
+The treemap uses balanced binary weighted partitioning, adjusted for terminal cells
 being taller than they are wide. It clips sub-cell items rather than inflating
 their apparent sizes. The tree retains a node per discovered entry plus an append-only pointer index
 for search. Timestamps are stored as Unix seconds to keep overhead small. Memory is
@@ -31,7 +31,7 @@ still delay exit on a stalled disk or network mount.
 
 A development benchmark on Linux amd64 / Intel Xeon 6975P-C, averaged over three
 warm-cache iterations, scanned 10,000 small files in **13.9 ms** (~718k files/s),
-with 4.16 MB of Go allocations per scan. A 10,000-entry map in a 160 × 50 viewport
+with 4.16 MB of Go allocations per scan. A 10,000-entry treemap in a 160 × 50 viewport
 took **0.30 ms**. Searching 100,000 indexed filenames averaged **3.5 ms**
 for plain text and **4.0 ms** for regex (query `999`, three iterations).
 These synthetic results exclude fixture creation and do not

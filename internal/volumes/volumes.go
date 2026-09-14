@@ -3,6 +3,7 @@ package volumes
 import "sort"
 
 type Volume struct {
+	Topology
 	Device, Path, Type      string
 	Total, Free, Available  uint64
 	Label, UUID, MountIssue string

@@ -154,6 +154,7 @@ explained in the [Linux mount manual](https://www.man7.org/linux/man-pages/man8/
 | Search recursively across scanned disk | f or Ctrl-F |
 | Show/hide hidden files and directories (default: shown) | . or H |
 | Toggle allocated/apparent bytes | a |
+| Show/hide disk free space and unaccounted usage | i |
 | Stop scan; keep partial results | s |
 | Rescan selected disk | r |
 | Choose another disk | d |
@@ -181,6 +182,30 @@ the session. This is a display toggle: scanning still includes hidden entries,
 and directory totals still include hidden data. A name filter limits both
 the list and the map; the directory total still represents the whole directory.
 The map can rearrange during scanning as sizes become known.
+
+## Disk free space and unaccounted usage
+
+The treemap header shows disk free space by default. Press **i** to hide or
+restore this summary in either the split or expanded map. On wider terminals it
+also shows total capacity and space available to an ordinary user; available
+space can be lower than free space because some blocks are reserved. Values
+refresh in the background every five seconds while the summary is enabled.
+
+**Outside scan/other** estimates filesystem used space minus the whole scan's
+allocated bytes. It can include inaccessible files, filesystem metadata,
+snapshots, deleted-but-open files, and data outside the selected scan path.
+During an incomplete or stopped scan it is labeled **Unscanned/other**; narrow
+terminals abbreviate either label to **Other**. `~` marks an estimate.
+
+Unreadable-entry counts remain separate: their exact byte size cannot generally
+be determined. Scanning a single folder does not measure all disk usage, so its
+remainder includes other folders. The figures stay disk-wide while navigating,
+filtering, hiding dotfiles, paging, or switching to apparent sizes. Filesystem
+capacity and per-file allocation are not always directly comparable, especially
+with shared blocks or concurrent changes; if scanned allocation exceeds reported
+used space, the remainder is shown as **unknown**, not a negative number or a
+claim that everything was scanned. These statistics describe the filesystem
+containing the scan root, not the sum of partitions on a physical drive.
 
 ## Expand and page the treemap
 

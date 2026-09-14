@@ -180,7 +180,7 @@ func (a *App) drawFullMap(w, h int) {
 		hint = "Smallest entry reached"
 	}
 	a.text(2, h-3, w-4, hint+" · b previous view", base.Foreground(accent))
-	a.text(2, h-2, w-4, "↑↓ select · Enter / double-click open · ← parent · f find · v view · t tail · ? help", base.Foreground(muted))
+	a.text(2, h-2, w-4, "↑↓ select · Enter open · ← parent · i disk space · f find · v view · t tail · ? help", base.Foreground(muted))
 }
 
 // An isolated entry can use multiple lines for a long filename, keeping its

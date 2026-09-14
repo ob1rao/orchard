@@ -13,7 +13,7 @@ No GitHub login, Go compiler, or sudo needed. Start it with:
 ```
 
 ![Orchard TUI showing directory sizes and a colorful storage treemap](docs/assets/orchard-tui.png)
-*Actual TUI with demo files, showing apparent sizes.*
+*Actual TUI with sparse demo files at apparent sizes; disk capacity reflects the host filesystem.*
 
 ## Explore your storage
 
@@ -22,6 +22,7 @@ Select a disk and watch the treemap fill as Orchard scans. Bigger tiles mean mor
 - Browse files and sizes with the keyboard or mouse.
 - Use `orchard --unmounted` to select and mount an unmounted volume read-only.
 - Search across the disk using plain text or regex.
+- See disk free space and an estimate of usage outside the scan.
 - View modified and created dates when available.
 - Show or hide dotfiles; they're included by default.
 
@@ -44,6 +45,7 @@ To scan a particular folder:
 | View selected file / start at end | v / t |
 | Filter this directory | / |
 | Show / hide dotfiles | . |
+| Show / hide disk-space summary | i |
 | Help / quit | ? / q |
 
 If `~/.local/bin` is on your PATH, you can simply run `orchard`.

@@ -95,6 +95,12 @@ with tempfile.TemporaryDirectory(prefix="orchard-pty-") as td:
     try:
         terminal.expect("COMPLETE")
         terminal.expect("SPACE MAP")
+        terminal.expect_screen("Disk free")
+        terminal.send(b"i")
+        terminal.send(b"\x0c")
+        assert b"Disk free" not in terminal.output, "disk summary toggle failed"
+        terminal.send(b"i")
+        terminal.expect_screen("Disk free")
         terminal.expect(".secret")
         terminal.expect("Hidden: on")
         terminal.send(b" ")
@@ -184,4 +190,4 @@ try:
     terminal.expect_screen("Mounted filesystems")
 finally:
     terminal.close()
-print("TUI: disk picker, rendering, treemap paging, keyboard, mouse, filtering, hidden toggle, recursive/regex search, dates, file viewing/tail, resize, and terminal restoration passed")
+print("TUI: disk picker, rendering, treemap paging, disk-space summary, keyboard, mouse, filtering, hidden toggle, recursive/regex search, dates, file viewing/tail, resize, and terminal restoration passed")

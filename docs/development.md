@@ -84,6 +84,20 @@ make build
 python3 scripts/capture_preview.py
 ```
 
+When capturing the TUI over a remote shell, check the terminal environment
+first. `NO_COLOR=1` disables Orchard's color output, and `TERM=unknown` can
+prevent tcell from detecting color capabilities. Run the session with a real
+terminal type and color enabled:
+
+```sh
+tmux new-session -d -x 120 -y 32 \
+  "sh -c 'unset NO_COLOR; export TERM=xterm-256color COLORTERM=truecolor; exec ./bin/orchard /'"
+tmux capture-pane -p -e -t orchard:0.0 -S -
+```
+
+The `-e` flag preserves ANSI styling in the capture. Verify that the captured
+stream contains `38;2;` truecolor sequences before rendering it as an image.
+
 Unmounted-volume discovery and mount failures are covered by fixtures and fake
 command runners. On Linux CI, the opt-in mount test also creates a temporary ext4 image, attaches
 it to a loop device, mounts it read-only, checks its contents, and detaches it.

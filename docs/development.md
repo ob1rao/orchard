@@ -90,7 +90,7 @@ prevent tcell from detecting color capabilities. Run the session with a real
 terminal type and color enabled:
 
 ```sh
-tmux new-session -d -x 120 -y 32 \
+tmux new-session -d -s orchard -x 120 -y 32 \
   "sh -c 'unset NO_COLOR; export TERM=xterm-256color COLORTERM=truecolor; exec ./bin/orchard /'"
 tmux capture-pane -p -e -t orchard:0.0 -S -
 ```

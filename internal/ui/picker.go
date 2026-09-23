@@ -53,10 +53,13 @@ func brandArt(loading bool) []string {
 	if loading {
 		tree = ".OoO."
 	}
+	// The third line used to explain that Orchard is a treemap explorer, which
+	// the tagline above it now says. Leave the trunk bare rather than say it
+	// twice.
 	return []string{
 		"    " + tree + "     " + spacedBrand(),
 		"  .oOooOo.    " + brandTagline,
-		"    /|\\       A treemap explorer for your disks",
+		"    /|\\",
 		"   _/ \\_",
 	}
 }

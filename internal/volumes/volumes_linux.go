@@ -37,7 +37,11 @@ func list() ([]Volume, error) {
 			continue
 		}
 		var st unix.Statfs_t
-		if unix.Statfs(p, &st) != nil || st.Blocks == 0 {
+		if unix.Statfs(p, &st) != nil {
+			continue
+		}
+		space, err := spaceFromStatfs(&st)
+		if err != nil {
 			continue
 		}
 		var info unix.Stat_t
@@ -45,7 +49,7 @@ func list() ([]Volume, error) {
 			continue
 		}
 		seen[p] = true
-		out = append(out, Volume{Device: unescape(b[1]), Path: p, Type: b[0], Total: st.Blocks * uint64(st.Bsize), Free: st.Bfree * uint64(st.Bsize), Available: st.Bavail * uint64(st.Bsize)})
+		out = append(out, Volume{Device: unescape(b[1]), Path: p, Type: b[0], Total: space.Total, Free: space.Free, Available: space.Available})
 	}
 	return out, s.Err()
 }

@@ -140,7 +140,8 @@ explained in the [Linux mount manual](https://www.man7.org/linux/man-pages/man8/
 
 | Action | Keyboard / mouse |
 | --- | --- |
-| Select disk | Up/Down, then Enter; or click a disk |
+| Select volume | Up/Down, then Enter; or click a list row |
+| Select a volume in the storage map | Click its tile; double-click explores it |
 | Show/hide unmounted volumes in picker | u |
 | Select entry | Up/Down, j/k, click a tile/list row |
 | Open directory | Enter, l, Right, or double-click |
@@ -326,7 +327,8 @@ See the [Linux statx reference](https://www.man7.org/linux/man-pages/man2/statx.
 - Unreadable entries are counted and the latest error is displayed. Results remain
   usable, with an incomplete-scan indication. The scanner never elevates privileges; the optional mount command may request system authorization.
   macOS privacy protections can restrict access even when Unix permissions allow it.
-- Disk selection shows filesystem capacity and free space. The treemap shows
+- Disk selection shows filesystem capacity and free space; on macOS it also
+  shows each APFS volume's own bytes, as reported by `diskutil`. The treemap shows
   a black disk-free tile alongside discoverable file allocations. File tiles
   exclude snapshots, filesystem overhead,
   deleted-but-open files, or inaccessible data. Directory metadata is included
@@ -346,17 +348,38 @@ Linux and Raspberry Pi OS use `lsblk`; macOS uses `diskutil`. Network filesystem
 and storage with unavailable ancestry remain selectable with an explicit unknown
 label. Press **u** to include unmounted volumes; **r** refreshes discovery.
 
-Disk and volume bars share one linear capacity scale across the list. Green
-solid cells show used space, black-backed light cells show filesystem free space,
-and `?` shows unknown usage. Tiny capacities occupy at least one terminal cell.
-Disk summaries count each visible filesystem or shared APFS container once;
-unmounted, undiscovered, and unallocated capacity stays unknown. APFS volume
-rows show shared container capacity, not independently additive volume sizes.
-Multi-disk storage is identified without assigning its capacity to one disk.
+Terminals at least 92 columns × 22 rows show a **storage map** beside the list.
+Each physical disk is a frame, so volumes that share a disk are visibly inside
+one box; a disk's own frame is the only thing that says they share hardware.
+Within a frame, tile **area is bytes**: the volume's colour fills from the
+bottom in proportion to space in use, free space is black as in the treemap,
+and `░` hatching is capacity the system reports but attributes to no volume.
+Colour identifies the filesystem family, so the same kind of volume reads the
+same on every disk.
 
-The compact terminal-art Orchard tree and wordmark appear on taller terminals.
-Wide terminals add a three-disk overview beside the wordmark; additional disks
-remain available in the scrolling list.
-A small discovery indicator animates while storage information loads; there is
-no splash-screen delay. Short terminals use a one-line wordmark. Arrow keys,
-Page Up/Down, Home/End, and mouse selection work throughout the grouped list.
+Disks stack as bands whose height tracks capacity. A band too thin to draw is
+raised to a readable minimum and paid for by the tallest band, because a picker
+that hides a disk cannot be used to choose one; the map header says so, and
+every figure beside it is exact. Volumes that Orchard cannot trace to a
+physical disk — network shares, virtual and image mounts — are listed under
+their own heading and left out of the map rather than sized against real disks.
+
+A shared APFS container is drawn as a nested frame. Its volumes all report the
+container's capacity through `statfs`, so each one is sized by the bytes it
+alone holds, taken from `diskutil`'s container report, and the free space they
+draw from is a single tile they visibly share. Without that report the
+container shows its occupancy as one block rather than inventing a split.
+Disk summaries count each filesystem or shared container once; unmounted,
+undiscovered, and unallocated capacity stays unknown. Multi-disk storage is
+identified without assigning its capacity to one disk.
+
+Each list row carries the volume's size and a usage meter drawn with
+eighth-width blocks, so a nearly empty volume still reads as occupied rather
+than as unused. The footer describes the selected volume in full: its own
+bytes, its capacity and usage, and its disk → partition → container chain.
+
+The compact terminal-art Orchard tree and wordmark appear on taller terminals,
+and short terminals use a one-line wordmark. A small discovery indicator
+animates while storage information loads; there is no splash-screen delay.
+Arrow keys, Page Up/Down, Home/End, and mouse selection work throughout the
+grouped list.

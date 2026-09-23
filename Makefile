@@ -1,6 +1,8 @@
-.PHONY: build test bench release clean
+.PHONY: build test verify bench release clean
 build:
 	go build -trimpath -o bin/orchard ./cmd/orchard
+verify:
+	./scripts/verify.sh
 test: build
 	go test -race ./...
 	go vet ./...

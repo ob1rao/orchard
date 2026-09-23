@@ -41,9 +41,17 @@ predict cold-disk, network, macOS, or Raspberry Pi performance.
 
 ```sh
 make test       # race tests, vet, installer fixtures, real PTY smoke test
+make verify     # the above, cross-target vet, then launch the TUI to check by eye
 make bench      # synthetic scanner and layout benchmarks
 make release VERSION=v0.2.0
 ```
+
+`make verify` runs every check in one pass, continuing past a failure so one
+run reports everything that is broken, and prints what to confirm on screen
+before starting Orchard. It always rebuilds first, because a checked-in
+`bin/orchard` may have been built for another machine. `scripts/verify.sh
+--quick` skips the race, installer and PTY suites for a faster loop, and
+`--no-run` stops before the TUI.
 
 `make test` also needs Python 3; its integration tests use only the standard
 library. `make release` runs on Linux and cross-compiles all six targets into
@@ -55,8 +63,11 @@ publishes release archives.
 
 Validated: Linux execution locally and in GitHub Actions; native macOS ARM64
 execution in GitHub Actions; scanner race tests; geometry invariants;
-keyboard/mouse navigation in a real PTY; resize and terminal restoration; eleven
-installer scenarios; and compilation of all six targets. ARMv6 (ARM1176), ARMv7
+keyboard/mouse navigation in a real PTY; resize and terminal restoration; fifteen
+installer scenarios; and compilation of all six targets. The storage picker's
+grouping, band heights, tile areas and mouse behaviour are covered by cell-buffer
+tests. `diskutil`'s APFS container report is parsed against plist fixtures only:
+per-volume usage inside a shared container still needs testing on real hardware. ARMv6 (ARM1176), ARMv7
 (Cortex-A7), and ARM64 (Cortex-A53) release binaries also
 pass scan accounting and interactive PTY tests under QEMU. Physical Raspberry Pi
 and Intel Mac testing remains necessary; emulation does not measure SD-card

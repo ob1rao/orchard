@@ -46,11 +46,19 @@ func listRows(physical, other []storageDisk) []pickerRow {
 	return rows
 }
 
-var brandArt = []string{
-	"    .oOo.     O R C H A R D",
-	"  .oOooOo.    See where your space goes.",
-	"    /|\\       A treemap explorer for your disks",
-	"   _/ \\_",
+// The splash is the same wordmark and tagline the other screens carry, drawn
+// large. Deriving both keeps them from drifting apart again.
+func brandArt(loading bool) []string {
+	tree := ".oOo."
+	if loading {
+		tree = ".OoO."
+	}
+	return []string{
+		"    " + tree + "     " + spacedBrand(),
+		"  .oOooOo.    " + brandTagline,
+		"    /|\\       A treemap explorer for your disks",
+		"   _/ \\_",
+	}
 }
 
 func (a *App) drawPicker(w, h int) {
@@ -69,16 +77,12 @@ func (a *App) drawPicker(w, h int) {
 	// top-1, so the list starts clear of both.
 	top := 3
 	if h >= 24 {
-		for i, line := range brandArt {
-			art := line
-			if i == 0 && a.diskLoading && a.brandFrame%2 == 1 {
-				art = "    .OoO.     O R C H A R D"
-			}
-			a.text(2, 1+i, max(listWidth, min(w-4, 48)), art, base.Foreground(accent).Bold(i == 0))
+		for i, line := range brandArt(a.diskLoading && a.brandFrame%2 == 1) {
+			a.text(2, 1+i, max(listWidth, min(w-4, 48)), line, base.Foreground(accent).Bold(i == 0))
 		}
 		top = 7
 	} else {
-		a.text(2, 0, w-4, "ORCHARD · your storage, in treemaps", base.Foreground(accent).Bold(true))
+		a.text(2, 0, w-4, brandLine(), base.Foreground(accent).Bold(true))
 	}
 	subtitle := "Choose a volume · u show unmounted"
 	if a.showUnmounted {

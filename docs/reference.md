@@ -145,7 +145,8 @@ explained in the [Linux mount manual](https://www.man7.org/linux/man-pages/man8/
 | Show/hide unmounted volumes in picker | u |
 | Select entry | Up/Down, j/k, click a tile/list row |
 | Open directory | Enter, l, Right, or double-click |
-| Parent directory | Left, h, Backspace, right-click, or click path bar |
+| Parent directory | Left, h, Backspace, Esc, right-click, or click path bar |
+| Back to the volume picker | Any of the above at the scan root; or d anywhere |
 | Return to scan root | g |
 | Move through list | Mouse wheel, Page Up/Down, Home/End |
 | Expand treemap / next smaller entries | Space |

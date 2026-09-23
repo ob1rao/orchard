@@ -21,7 +21,7 @@ import (
 // every screen. The splash letterspaces this name rather than spelling a
 // second one, which is how the two used to drift apart.
 const brandName = "ORCHARD"
-const brandTagline = "See where your space goes"
+const brandTagline = "your storage, in treemaps"
 
 func brandLine() string { return brandName + " · " + brandTagline }
 

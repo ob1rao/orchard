@@ -11,6 +11,7 @@ import (
 	"github.com/gdamore/tcell/v3"
 	"github.com/ob1rao/orchard/internal/scan"
 	"github.com/ob1rao/orchard/internal/treemap"
+	"github.com/ob1rao/orchard/internal/volumes"
 )
 
 func testApp(t *testing.T) *App {
@@ -219,8 +220,114 @@ func TestHiddenToggleAndNavigation(t *testing.T) {
 	if len(a.entries) != 1 {
 		t.Fatal("could not reveal hidden-only directory")
 	}
-	a.back()
+	a.back(context.Background())
 	if len(a.entries) != 6 {
 		t.Fatal("toggle did not persist when going back")
+	}
+}
+
+// The scan root used to be a dead end: every gesture meaning "up" did nothing
+// there, so the opening screen was unreachable except through an undocumented
+// key. Each of them must now land back on the volume picker.
+func TestUpFromScanRootReturnsToThePicker(t *testing.T) {
+	press := func(key tcell.Key, s string) func(*App) {
+		return func(a *App) { a.key(context.Background(), tcell.NewEventKey(key, s, tcell.ModNone)) }
+	}
+	gestures := map[string]func(*App){
+		"left":      press(tcell.KeyLeft, ""),
+		"backspace": press(tcell.KeyBackspace2, ""),
+		"escape":    press(tcell.KeyEscape, ""),
+		"h":         press(tcell.KeyRune, "h"),
+		"d":         press(tcell.KeyRune, "d"),
+		"right click": func(a *App) {
+			a.mouse(context.Background(), tcell.NewEventMouse(10, 10, tcell.Button2, tcell.ModNone))
+		},
+		"path bar": func(a *App) {
+			a.mouse(context.Background(), tcell.NewEventMouse(10, 2, tcell.Button1, tcell.ModNone))
+			a.mouse(context.Background(), tcell.NewEventMouse(10, 2, tcell.ButtonNone, tcell.ModNone))
+		},
+	}
+	for name, gesture := range gestures {
+		a := testApp(t)
+		a.screen = newTestScreen(100, 30)
+		if a.picker {
+			t.Fatalf("%s: expected to start in the tree view", name)
+		}
+		gesture(a)
+		if !a.picker {
+			t.Fatalf("%s at the scan root did not return to the picker", name)
+		}
+	}
+	// One level down, the same gesture still means "up one directory".
+	a := testApp(t)
+	a.screen = newTestScreen(100, 30)
+	a.enter(a.entries[0].Node)
+	if a.current == a.tree.Root {
+		t.Fatal("could not descend to set up the test")
+	}
+	a.back(context.Background())
+	if a.picker || a.current != a.tree.Root {
+		t.Fatal("back from a subdirectory should reach the root, not the picker")
+	}
+}
+
+// Every screen introduces the app the same way. The wordmark and tagline used
+// to be spelled four different ways across the picker, the header and the
+// resize notice, which is how they drifted apart in the first place.
+func TestBrandingIsConsistentOnEveryScreen(t *testing.T) {
+	tree := func() *App {
+		a := testApp(t)
+		a.screen = newTestScreen(100, 30)
+		return a
+	}
+	screens := map[string]func() *App{
+		"picker": func() *App { return &App{screen: newTestScreen(100, 30), picker: true} },
+		"narrow picker": func() *App {
+			return &App{screen: newTestScreen(60, 18), picker: true}
+		},
+		"tree": tree,
+		"help over the tree": func() *App {
+			a := tree()
+			a.help = true
+			return a
+		},
+		"help over the picker": func() *App {
+			return &App{screen: newTestScreen(100, 30), picker: true, help: true}
+		},
+		"mount form": func() *App {
+			a := &App{screen: newTestScreen(100, 30), picker: true}
+			a.mount = &mountForm{volume: volumes.Volume{Device: "/dev/sdb1", Label: "BACKUP"}}
+			return a
+		},
+		"find": func() *App {
+			a := tree()
+			a.openFind()
+			return a
+		},
+		"viewer": func() *App {
+			a := tree()
+			a.enter(a.entries[0].Node)
+			a.openViewer(false)
+			return a
+		},
+	}
+	for name, build := range screens {
+		a := build()
+		a.draw()
+		text := screenText(a)
+		if !strings.Contains(text, brandTagline) {
+			t.Errorf("%s: no tagline %q on screen:\n%s", name, brandTagline, text)
+		}
+		// The splash letterspaces the wordmark; every other screen prints it
+		// plainly. One or the other, never a third spelling.
+		if !strings.Contains(text, brandLine()) && !strings.Contains(text, spacedBrand()) {
+			t.Errorf("%s: no wordmark on screen:\n%s", name, text)
+		}
+	}
+	// Even the resize notice is branded, and with the same name.
+	a := &App{screen: newTestScreen(40, 12), picker: true}
+	a.draw()
+	if !strings.Contains(screenText(a), brandName) {
+		t.Errorf("resize notice is unbranded:\n%s", screenText(a))
 	}
 }

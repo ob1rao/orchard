@@ -17,6 +17,16 @@ import (
 	"github.com/ob1rao/orchard/internal/volumes"
 )
 
+// One wordmark and one tagline, so the app introduces itself the same way on
+// every screen. The splash letterspaces this name rather than spelling a
+// second one, which is how the two used to drift apart.
+const brandName = "ORCHARD"
+const brandTagline = "See where your space goes"
+
+func brandLine() string { return brandName + " · " + brandTagline }
+
+func spacedBrand() string { return strings.Join(strings.Split(brandName, ""), " ") }
+
 var (
 	bg      = tcell.NewHexColor(0x0d1420)
 	fg      = tcell.NewHexColor(0xdce7f4)
@@ -221,9 +231,26 @@ func (a *App) enter(n *scan.Node) {
 	a.offset = 0
 	a.refresh()
 }
-func (a *App) back() {
-	if a.current != nil && a.current.Parent != nil {
+
+// showPicker returns to the volume list, rediscovering storage so a drive
+// plugged in while a scan was running is there when the reader arrives.
+func (a *App) showPicker(ctx context.Context) {
+	a.mapPages = nil
+	a.picker = true
+	a.offset = 0
+	a.reloadDisks(ctx)
+}
+
+// back goes up one directory, and out to the volume picker when already at the
+// scan root. Without that the root is a dead end: every gesture that means
+// "up" — ←, Backspace, Esc, h, right-click, the path bar — did nothing there,
+// leaving d as the only undocumented way back to the opening screen.
+func (a *App) back(ctx context.Context) {
+	switch {
+	case a.current != nil && a.current.Parent != nil:
 		a.enter(a.current.Parent)
+	case !a.picker:
+		a.showPicker(ctx)
 	}
 }
 func (a *App) move(delta int) {
@@ -307,7 +334,7 @@ func (a *App) key(ctx context.Context, e *tcell.EventKey) bool {
 			a.mapPages = nil
 			a.refresh()
 		} else if !a.picker {
-			a.back()
+			a.back(ctx)
 		}
 	case tcell.KeyUp:
 		a.move(-1)
@@ -332,7 +359,7 @@ func (a *App) key(ctx context.Context, e *tcell.EventKey) bool {
 		}
 	case tcell.KeyLeft, tcell.KeyBackspace, tcell.KeyBackspace2:
 		if !a.picker {
-			a.back()
+			a.back(ctx)
 		}
 	case tcell.KeyEnter, tcell.KeyRight:
 		if a.picker {
@@ -378,7 +405,7 @@ func (a *App) key(ctx context.Context, e *tcell.EventKey) bool {
 			a.move(-1)
 		case "h":
 			if !a.picker {
-				a.back()
+				a.back(ctx)
 			}
 		case "l":
 			if !a.picker && len(a.entries) > 0 {
@@ -389,10 +416,7 @@ func (a *App) key(ctx context.Context, e *tcell.EventKey) bool {
 				a.enter(a.tree.Root)
 			}
 		case "d":
-			a.mapPages = nil
-			a.picker = true
-			a.offset = 0
-			a.reloadDisks(ctx)
+			a.showPicker(ctx)
 		case "a":
 			a.mapPages = nil
 			a.apparent = !a.apparent
@@ -469,7 +493,7 @@ func (a *App) mouse(ctx context.Context, e *tcell.EventMouse) {
 	a.mouseDown = true
 	if b&tcell.Button2 != 0 {
 		if !a.picker {
-			a.back()
+			a.back(ctx)
 		}
 		return
 	}
@@ -503,7 +527,7 @@ func (a *App) mouse(ctx context.Context, e *tcell.EventMouse) {
 		return
 	}
 	if y == 2 {
-		a.back()
+		a.back(ctx)
 		return
 	}
 	index := -1
@@ -577,12 +601,14 @@ func (a *App) draw() {
 	// a layout that is no longer on screen would select something arbitrary.
 	a.tiles, a.pickerRows, a.pickerTiles = nil, map[int]int{}, nil
 	if w < 50 || h < 16 {
-		a.text(1, 1, w-2, "orchard · resize terminal to at least 50 × 16", base)
+		a.text(1, 1, w-2, brandName+" · resize terminal to at least 50 × 16", base)
 		s.Show()
 		return
 	}
-	if !a.picker || a.mount != nil {
-		a.text(2, 0, w-4, "ORCHARD  /  see where your space goes", base.Foreground(accent).Bold(true))
+	// The picker carries the wordmark in its own splash, except when an
+	// overlay covers it: no screen should be left unbranded.
+	if !a.picker || a.mount != nil || a.help {
+		a.text(2, 0, w-4, brandLine(), base.Foreground(accent).Bold(true))
 	}
 	if a.mount != nil {
 		a.drawMount(w, h)
@@ -786,7 +812,7 @@ func (a *App) drawTile(t treemap.Tile, e scan.Entry, selected, wrapName bool) {
 }
 func (a *App) drawHelp(w, h int) {
 	a.screen.FillArea(1, 1, w-2, h-2, ' ', base)
-	lines := []string{"KEYBOARD & MOUSE", "", "↑/↓ or j/k   Select an entry; wheel scrolls", "Enter / l   Open selected directory", "← / h / Backspace   Parent directory", "g   Return to the scan root", "Space   Expand treemap / next smaller entries     b   Previous treemap view", "Click   Select tile or list entry", "Double-click   Open directory; right-click goes back", "/   Filter current directory     f / Ctrl-F   Search disk", ". / H   Show or hide dotfiles and dot directories (default: shown)", "v   View selected file     t   View from the end (no follow)", "a   Toggle allocated bytes / apparent file sizes", "i   Show/hide disk free space and unaccounted usage estimate", "s   Stop scan and browse partial results", "r   Rescan disk     d   Choose another disk", "u   In disk picker: show/hide unmounted volumes", "In the disk picker, a map tile is one volume inside its physical disk;", "click a tile to select it and double-click to explore it.", "Home / End / PgUp / PgDn   Navigate the list", "q / Ctrl-C   Quit     Ctrl-L   Redraw", "", "Other usage includes inaccessible data, overhead and data outside the scan.", "Its byte count is an estimate, not a measure of permission errors.", "Tiles represent immediate children, ordered by size.", "Directories open into another treemap. Tiny entries stay in the list.", "Symlinks are not followed; other filesystems are skipped.", "Hard links count once; black tiles show disk free space (i toggles).", "", "Press any key to close"}
+	lines := []string{"KEYBOARD & MOUSE", "", "↑/↓ or j/k   Select an entry; wheel scrolls", "Enter / l   Open selected directory", "← / h / Backspace   Parent directory; at the scan root, back to the disk picker", "g   Return to the scan root", "Space   Expand treemap / next smaller entries     b   Previous treemap view", "Click   Select tile or list entry", "Double-click   Open directory; right-click goes back", "/   Filter current directory     f / Ctrl-F   Search disk", ". / H   Show or hide dotfiles and dot directories (default: shown)", "v   View selected file     t   View from the end (no follow)", "a   Toggle allocated bytes / apparent file sizes", "i   Show/hide disk free space and unaccounted usage estimate", "s   Stop scan and browse partial results", "r   Rescan disk     d   Choose another disk", "u   In disk picker: show/hide unmounted volumes", "In the disk picker, a map tile is one volume inside its physical disk;", "click a tile to select it and double-click to explore it.", "Home / End / PgUp / PgDn   Navigate the list", "q / Ctrl-C   Quit     Ctrl-L   Redraw", "", "Other usage includes inaccessible data, overhead and data outside the scan.", "Its byte count is an estimate, not a measure of permission errors.", "Tiles represent immediate children, ordered by size.", "Directories open into another treemap. Tiny entries stay in the list.", "Symlinks are not followed; other filesystems are skipped.", "Hard links count once; black tiles show disk free space (i toggles).", "", "Press any key to close"}
 	for i, line := range lines {
 		if i+2 >= h-2 {
 			break

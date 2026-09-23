@@ -10,9 +10,11 @@ import (
 
 // Topology describes a reported storage ancestry, not one inferred from names.
 // Pool identifies shared capacity (e.g. APFS), which must only be counted once.
+// Owned is the share of a pool this volume alone holds, when the system
+// reports it; it stays zero for a volume that owns its capacity outright.
 type Topology struct {
 	Disk, Chain, Pool string
-	DiskSize          uint64
+	DiskSize, Owned   uint64
 }
 
 func WithTopology(ctx context.Context, v []Volume) ([]Volume, error) {

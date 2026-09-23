@@ -20,6 +20,8 @@ the `export PATH=...` command printed by the installer, or start it directly wit
 
 ## Explore your storage
 
+The opening screen maps your storage: every physical disk is a frame, the volumes on it are tiles sized by their capacity, and each one fills up as it fills up. Volumes sharing a disk—or a shared APFS container—sit inside the same box, so you can see it rather than work it out.
+
 Select a disk and watch the treemap fill as Orchard scans. Bigger tiles mean more space used. Open a directory to see what's inside—Scans and file viewing are read-only.
 
 - Browse files and sizes with the keyboard or mouse.

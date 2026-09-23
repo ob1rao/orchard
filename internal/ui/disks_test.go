@@ -101,7 +101,11 @@ func TestUnmountedPickerDoesNotInventUsedSpace(t *testing.T) {
 		text.WriteString(string(row))
 		text.WriteByte('\n')
 	}
-	if !strings.Contains(text.String(), "UNMOUNTED") || !strings.Contains(text.String(), "1.0 MB capacity · usage unknown until mounted") {
+	if !strings.Contains(text.String(), "unmounted") || !strings.Contains(text.String(), "1.0 MB capacity · usage unknown until mounted") {
 		t.Fatal("unmounted capacity rendered as known usage")
+	}
+	// A gauge or a percentage here would be invented: nothing has measured it.
+	if strings.Contains(text.String(), "█") || strings.Contains(text.String(), "% ") {
+		t.Fatal("unmounted volume drew a usage level")
 	}
 }

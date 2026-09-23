@@ -16,10 +16,11 @@ func list() ([]Volume, error) {
 	}
 	var out []Volume
 	for _, s := range buf[:n] {
-		if s.Blocks == 0 {
+		space, err := spaceFromStatfs(&s)
+		if err != nil {
 			continue
 		}
-		out = append(out, Volume{Device: unix.ByteSliceToString(s.Mntfromname[:]), Path: unix.ByteSliceToString(s.Mntonname[:]), Type: unix.ByteSliceToString(s.Fstypename[:]), Total: s.Blocks * uint64(s.Bsize), Free: s.Bfree * uint64(s.Bsize), Available: s.Bavail * uint64(s.Bsize)})
+		out = append(out, Volume{Device: unix.ByteSliceToString(s.Mntfromname[:]), Path: unix.ByteSliceToString(s.Mntonname[:]), Type: unix.ByteSliceToString(s.Fstypename[:]), Total: space.Total, Free: space.Free, Available: space.Available})
 	}
 	return out, nil
 }

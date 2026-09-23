@@ -67,6 +67,8 @@ type App struct {
 	spaceNext                      time.Time
 	spaceResults                   chan spaceUpdate
 	pickerRows                     map[int]int
+	pickerTiles                    []pickerTile
+	lastPick                       string
 	brandFrame                     int
 }
 
@@ -230,12 +232,30 @@ func (a *App) move(delta int) {
 		return
 	}
 	if a.picker {
-		a.disk = max(0, min(len(a.volumes)-1, a.disk+delta))
+		a.disk = a.pickerStep(delta)
 	} else {
 		lo, hi := a.mapBounds()
 		a.selected = max(lo, min(hi-1, a.selected+delta))
 	}
 }
+
+// pickerStep moves the selection through the grouped order the picker draws,
+// which is not the order volumes were discovered in. Regrouping costs nothing
+// at this size and cannot fall out of step with the current volume list.
+func (a *App) pickerStep(delta int) int {
+	order := storageOrder(splitStorage(groupStorage(a.volumes)))
+	if len(order) == 0 {
+		return 0
+	}
+	at := 0
+	for i, index := range order {
+		if index == a.disk {
+			at = i
+		}
+	}
+	return order[max(0, min(len(order)-1, at+delta))]
+}
+
 func (a *App) key(ctx context.Context, e *tcell.EventKey) bool {
 	if e.Key() == tcell.KeyCtrlC {
 		return true
@@ -299,13 +319,13 @@ func (a *App) key(ctx context.Context, e *tcell.EventKey) bool {
 		a.move(max(1, a.listHeight))
 	case tcell.KeyHome:
 		if a.picker {
-			a.disk = 0
+			a.disk = a.pickerStep(-len(a.volumes))
 		} else {
 			a.selected, _ = a.mapBounds()
 		}
 	case tcell.KeyEnd:
 		if a.picker {
-			a.disk = max(0, len(a.volumes)-1)
+			a.disk = a.pickerStep(len(a.volumes))
 		} else {
 			_, hi := a.mapBounds()
 			a.selected = max(0, hi-1)
@@ -457,10 +477,28 @@ func (a *App) mouse(ctx context.Context, e *tcell.EventMouse) {
 		return
 	}
 	if a.picker {
-		index, hit := a.pickerRows[y]
-		if hit && index >= 0 && index < len(a.volumes) {
+		// The map shares its rows with the list, so the column decides which
+		// of them a click belongs to.
+		if index, hit := a.pickerRows[y]; hit && x < a.listWidth && index < len(a.volumes) {
 			a.disk = index
 			a.selectDisk(ctx)
+			return
+		}
+		for _, t := range a.pickerTiles {
+			if !t.Contains(x, y) || t.volume >= len(a.volumes) {
+				continue
+			}
+			a.disk = t.volume
+			// One click on the map selects, so a reader can compare tiles
+			// without starting a scan of whichever one they landed on.
+			pick := a.volumes[t.volume].Device + "\x00" + a.volumes[t.volume].Path
+			if a.lastPick == pick && time.Since(a.lastClick) < 450*time.Millisecond {
+				a.lastPick = ""
+				a.selectDisk(ctx)
+			} else {
+				a.lastPick, a.lastClick = pick, time.Now()
+			}
+			return
 		}
 		return
 	}
@@ -535,7 +573,9 @@ func (a *App) draw() {
 	s := a.screen
 	s.Clear()
 	w, h := s.Size()
-	a.tiles = nil
+	// Drop every hit target before laying out again: a click arriving against
+	// a layout that is no longer on screen would select something arbitrary.
+	a.tiles, a.pickerRows, a.pickerTiles = nil, map[int]int{}, nil
 	if w < 50 || h < 16 {
 		a.text(1, 1, w-2, "orchard · resize terminal to at least 50 × 16", base)
 		s.Show()
@@ -746,7 +786,7 @@ func (a *App) drawTile(t treemap.Tile, e scan.Entry, selected, wrapName bool) {
 }
 func (a *App) drawHelp(w, h int) {
 	a.screen.FillArea(1, 1, w-2, h-2, ' ', base)
-	lines := []string{"KEYBOARD & MOUSE", "", "↑/↓ or j/k   Select an entry; wheel scrolls", "Enter / l   Open selected directory", "← / h / Backspace   Parent directory", "g   Return to the scan root", "Space   Expand treemap / next smaller entries     b   Previous treemap view", "Click   Select tile or list entry", "Double-click   Open directory; right-click goes back", "/   Filter current directory     f / Ctrl-F   Search disk", ". / H   Show or hide dotfiles and dot directories (default: shown)", "v   View selected file     t   View from the end (no follow)", "a   Toggle allocated bytes / apparent file sizes", "i   Show/hide disk free space and unaccounted usage estimate", "s   Stop scan and browse partial results", "r   Rescan disk     d   Choose another disk", "u   In disk picker: show/hide unmounted volumes", "Home / End / PgUp / PgDn   Navigate the list", "q / Ctrl-C   Quit     Ctrl-L   Redraw", "", "Other usage includes inaccessible data, overhead and data outside the scan.", "Its byte count is an estimate, not a measure of permission errors.", "Tiles represent immediate children, ordered by size.", "Directories open into another treemap. Tiny entries stay in the list.", "Symlinks are not followed; other filesystems are skipped.", "Hard links count once; black tiles show disk free space (i toggles).", "", "Press any key to close"}
+	lines := []string{"KEYBOARD & MOUSE", "", "↑/↓ or j/k   Select an entry; wheel scrolls", "Enter / l   Open selected directory", "← / h / Backspace   Parent directory", "g   Return to the scan root", "Space   Expand treemap / next smaller entries     b   Previous treemap view", "Click   Select tile or list entry", "Double-click   Open directory; right-click goes back", "/   Filter current directory     f / Ctrl-F   Search disk", ". / H   Show or hide dotfiles and dot directories (default: shown)", "v   View selected file     t   View from the end (no follow)", "a   Toggle allocated bytes / apparent file sizes", "i   Show/hide disk free space and unaccounted usage estimate", "s   Stop scan and browse partial results", "r   Rescan disk     d   Choose another disk", "u   In disk picker: show/hide unmounted volumes", "In the disk picker, a map tile is one volume inside its physical disk;", "click a tile to select it and double-click to explore it.", "Home / End / PgUp / PgDn   Navigate the list", "q / Ctrl-C   Quit     Ctrl-L   Redraw", "", "Other usage includes inaccessible data, overhead and data outside the scan.", "Its byte count is an estimate, not a measure of permission errors.", "Tiles represent immediate children, ordered by size.", "Directories open into another treemap. Tiny entries stay in the list.", "Symlinks are not followed; other filesystems are skipped.", "Hard links count once; black tiles show disk free space (i toggles).", "", "Press any key to close"}
 	for i, line := range lines {
 		if i+2 >= h-2 {
 			break

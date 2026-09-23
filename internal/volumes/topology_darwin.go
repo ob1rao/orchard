@@ -13,10 +13,22 @@ func readTopology(ctx context.Context) (map[string]Topology, error) {
 	if err != nil {
 		return nil, err
 	}
-	return parseDarwinTopology(report), nil
+	// Ancestry is the part callers depend on. Losing the container report only
+	// costs per-volume usage inside a shared container, so it is not fatal.
+	usage := map[string]uint64{}
+	if data, err := commandOutput(ctx, "diskutil", "apfs", "list", "-plist"); err == nil {
+		if containers, err := parsePlist(data); err == nil {
+			usage = parseAPFSUsage(containers)
+		}
+	}
+	return parseDarwinTopology(report, usage), nil
 }
 
-func parseDarwinTopology(report map[string]any) map[string]Topology {
+// usage carries each APFS volume's own bytes, keyed by device. It is applied
+// as the tree is built so that a snapshot inherits it from the volume it was
+// taken from: a sealed system volume is mounted from its snapshot device, and
+// that is the device statfs reports for "/".
+func parseDarwinTopology(report map[string]any, usage map[string]uint64) map[string]Topology {
 	out := map[string]Topology{}
 	disks, _ := report["AllDisksAndPartitions"].([]any)
 	for _, raw := range disks {
@@ -72,6 +84,7 @@ func parseDarwinTopology(report map[string]any) map[string]Topology {
 			id := "/dev/" + stringValue(child, "DeviceIdentifier")
 			v := t
 			v.Chain += " > " + id
+			v.Owned = usage[id]
 			out[id] = v
 			snapshots, _ := child["MountedSnapshots"].([]any)
 			for _, raw := range snapshots {

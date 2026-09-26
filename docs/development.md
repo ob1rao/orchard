@@ -11,6 +11,24 @@ make build
 ./bin/orchard
 ```
 
+## Test your checkout as an installed command
+
+`install.sh` always downloads a published release; it is the end-user path and
+never builds from source, so running it from a clone will replace your build
+with whatever is on GitHub. To put *this* working tree on your PATH instead:
+
+```sh
+make install     # builds, then installs to ~/.local/bin/orchard
+orchard --version
+```
+
+The version string comes from `git describe`, so a local build reports
+something like `v0.7.0-3-g0b0df5c-local` or `-dirty`, while a release reports a
+bare tag. That is the quickest way to tell which binary you are running. Set
+`ORCHARD_INSTALL_DIR` to install elsewhere, and rerun `make install` after
+every change. `make uninstall` removes the binary; the PATH line that either
+installer adds to your shell profile stays.
+
 ## Performance and implementation
 
 A bounded worker pool reads directories in 256-entry batches. One coordinator

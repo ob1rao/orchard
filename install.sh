@@ -1,5 +1,6 @@
 #!/bin/sh
 # Install a published orchard binary. No root access or Go toolchain required.
+# This never builds from source; to install a checkout, see scripts/install-local.sh.
 set -eu
 REPO=${ORCHARD_REPO:-ob1rao/orchard}
 VERSION=${ORCHARD_VERSION:-latest}

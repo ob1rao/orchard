@@ -13,25 +13,54 @@ make build
 
 ## Performance and implementation
 
-A bounded worker pool reads directories in 256-entry batches. One coordinator
+A bounded worker pool reads directories in 64 KiB batches. One coordinator
 owns tree updates, deduplicates inode identities, and propagates batch totals
 through the ancestors. A mutex protects brief snapshot copies; sorting happens
 outside the lock. The terminal refreshes live results five times per second and
 stops periodic redraws once scanning finishes. Tcell sends terminal-cell diffs.
+
+Metadata, not directory listing, is where a scan spends itself: one `statx` per
+entry accounts for roughly 90% of syscall time and two thirds of all CPU. Linux
+reads directories with `getdents64` into a per-worker 64 KiB buffer and skips
+the metadata call outright for sockets, FIFOs and device nodes, which `d_type`
+identifies for free. macOS lists with `getdirentries` and still
+asks per entry; `getattrlistbulk` would return metadata with the listing and
+remove that call, but its packed reply reserves no size for a directory, so it
+needs a record layout this does not yet have.
+
+A scan stops at the filesystem it started on, which it decides by mount ID
+rather than by device number. Btrfs numbers every subvolume as its own device
+inside a single mount, so a device comparison silently dropped `/home` and
+`/.snapshots` from a root scan and reported the loss only through the skipped
+counter. Kernels before 5.8 report no mount ID and fall back to the device.
 
 The treemap uses balanced binary weighted partitioning, adjusted for terminal cells
 being taller than they are wide. It clips sub-cell items rather than inflating
 their apparent sizes. The tree retains a node per discovered entry plus an append-only pointer index
 for search. Timestamps are stored as Unix seconds to keep overhead small. Memory is
 linear in file count. Very large single directories also cost more to sort.
-Choose a smaller subtree on memory-constrained Pis. `--workers 1` can help on
-seek-sensitive disks; the default is 2–8 workers depending on available CPUs.
+Choose a smaller subtree on memory-constrained Pis. By default the worker count
+follows the storage rather than the processor: 16 for a network filesystem,
+which waits on a server rather than a disk; one per core for tmpfs, which waits
+on nothing; 4 for FUSE, where a single daemon answers every request; 2 for a
+disk that reports itself as rotating; and otherwise 2–8 by CPU count.
+`--workers N` overrides the choice and `--workers 1` still helps on a
+seek-sensitive disk.
+
+Only sysfs entries on a `scsi` or `ide` bus are believed about rotation. virtio
+and loop devices report themselves as rotating whatever actually backs them,
+and device-mapper and md name no bus at all; trusting them measured 50% slower
+on a virtio-backed VM than ignoring them.
 Cancellation stops scheduling immediately; an in-flight filesystem call can
 still delay exit on a stalled disk or network mount.
 
 A development benchmark on Linux amd64 / Intel Xeon 6975P-C, averaged over three
-warm-cache iterations, scanned 10,000 small files in **13.9 ms** (~718k files/s),
-with 4.16 MB of Go allocations per scan. A 10,000-entry treemap in a 160 × 50 viewport
+warm-cache iterations, scanned 10,000 small files in **13.9 ms** (~718k files/s)
+with 4.16 MB of Go allocations per scan. That timing predates the directory
+reading described above and is due a re-measurement on the same machine;
+allocations are machine-independent and are now **3.27 MB** over 30.1k
+allocations, from 4.16 MB over 40.5k. On a Linux arm64 VM the same changes cut
+a warm 104k-file scan of `/usr` from 87.7 ms to 77.8 ms. A 10,000-entry treemap in a 160 × 50 viewport
 took **0.30 ms**. Searching 100,000 indexed filenames averaged **3.5 ms**
 for plain text and **4.0 ms** for regex (query `999`, three iterations).
 These synthetic results exclude fixture creation and do not
@@ -64,7 +93,8 @@ publishes release archives.
 Validated: Linux execution locally and in GitHub Actions; native macOS ARM64
 execution in GitHub Actions; scanner race tests; geometry invariants;
 keyboard/mouse navigation in a real PTY; resize and terminal restoration; fifteen
-installer scenarios; and compilation of all six targets. The storage picker's
+installer scenarios; and compilation of all six targets. Btrfs subvolume
+accounting is covered by an opt-in loopback test alongside the mount test. The storage picker's
 grouping, band heights, tile areas and mouse behaviour are covered by cell-buffer
 tests. `diskutil`'s APFS container report is parsed against plist fixtures only:
 per-volume usage inside a shared container still needs testing on real hardware. ARMv6 (ARM1176), ARMv7

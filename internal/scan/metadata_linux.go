@@ -11,14 +11,15 @@ import (
 
 var noStatx atomic.Bool
 
-// statx returns allocation and birth time in the same metadata call. Older
-// kernels and restricted environments fall back without inventing birth times.
+// statx returns allocation, birth time and mount ID in one metadata call.
+// Older kernels and restricted environments fall back without inventing birth
+// times; kernels before 5.8 report no mount ID and leave hasMount false.
 func readMetadata(fd int, name string) (item, error) {
 	if !noStatx.Load() {
 		var s unix.Statx_t
-		err := unix.Statx(fd, name, unix.AT_SYMLINK_NOFOLLOW|unix.AT_NO_AUTOMOUNT, unix.STATX_BASIC_STATS|unix.STATX_BTIME, &s)
+		err := unix.Statx(fd, name, unix.AT_SYMLINK_NOFOLLOW|unix.AT_NO_AUTOMOUNT, unix.STATX_BASIC_STATS|unix.STATX_BTIME|unix.STATX_MNT_ID, &s)
 		if err == nil {
-			return item{name: name, dir: s.Mode&unix.S_IFMT == unix.S_IFDIR, mode: uint32(s.Mode), allocated: s.Blocks * 512, apparent: s.Size, id: identity{unix.Mkdev(s.Dev_major, s.Dev_minor), s.Ino}, links: uint64(s.Nlink), modified: s.Mtime.Sec, created: s.Btime.Sec, hasCreated: s.Mask&unix.STATX_BTIME != 0}, nil
+			return item{name: name, dir: s.Mode&unix.S_IFMT == unix.S_IFDIR, mode: uint32(s.Mode), allocated: s.Blocks * 512, apparent: s.Size, id: identity{unix.Mkdev(s.Dev_major, s.Dev_minor), s.Ino}, links: uint64(s.Nlink), modified: s.Mtime.Sec, created: s.Btime.Sec, hasCreated: s.Mask&unix.STATX_BTIME != 0, mount: s.Mnt_id, hasMount: s.Mask&unix.STATX_MNT_ID != 0}, nil
 		}
 		if errors.Is(err, unix.ENOSYS) {
 			noStatx.Store(true)

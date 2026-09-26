@@ -4,10 +4,8 @@ package scan
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"sync"
 	"syscall"
@@ -90,9 +88,9 @@ func (t *Tree) Snapshot(n *Node, apparent bool) View {
 	return v
 }
 
+// Options carries scan settings. A Workers of zero tunes the count to the
+// storage behind the scanned path.
 type Options struct{ Workers int }
-
-func DefaultWorkers() int { return min(8, max(2, runtime.NumCPU())) }
 
 type identity struct{ dev, ino uint64 }
 type job struct {
@@ -109,7 +107,27 @@ type item struct {
 	mode                uint32
 	modified, created   int64
 	hasCreated          bool
+	mount               uint64
+	hasMount            bool
 }
+
+// boundary marks the filesystem a scan started on. Btrfs gives every subvolume
+// its own device number while keeping it in one mount, so comparing devices
+// alone silently drops /home or /.snapshots from a root scan. Mount IDs say
+// exactly what a device number only approximates; kernels before 5.8 and
+// platforms without statx report none, and fall back to the device.
+type boundary struct {
+	dev, mount uint64
+	hasMount   bool
+}
+
+func (b boundary) holds(it item) bool {
+	if b.hasMount && it.hasMount {
+		return it.mount == b.mount
+	}
+	return it.id.dev == b.dev
+}
+
 type batch struct {
 	job   job
 	items []item
@@ -135,24 +153,59 @@ func Start(ctx context.Context, path string, opt Options) (*Tree, <-chan struct{
 		return nil, nil, fmt.Errorf("%s is not a directory", path)
 	}
 	st := info.Sys().(*syscall.Stat_t)
+	id := identity{uint64(st.Dev), uint64(st.Ino)}
 	root := &Node{Name: path, Dir: true, Allocated: uint64(max(0, st.Blocks)) * 512, Apparent: uint64(max(0, info.Size())), Modified: info.ModTime().Unix()}
-	if meta, err := readMetadata(unix.AT_FDCWD, path); err == nil && meta.id == (identity{uint64(st.Dev), uint64(st.Ino)}) {
+	bound := boundary{dev: id.dev}
+	if meta, err := readMetadata(unix.AT_FDCWD, path); err == nil && meta.id == id {
 		root.Created, root.HasCreated = meta.created, meta.hasCreated
+		bound.mount, bound.hasMount = meta.mount, meta.hasMount
 	}
 	t := &Tree{Root: root, started: time.Now(), stats: Stats{Directories: 1}}
 	done := make(chan struct{})
 	workers := opt.Workers
 	if workers <= 0 {
-		workers = DefaultWorkers()
+		workers = WorkersFor(path)
 	}
 	workers = min(workers, 64)
 	go func() {
 		defer close(done)
-		t.run(ctx, job{root, path, identity{uint64(st.Dev), uint64(st.Ino)}}, workers)
+		t.run(ctx, job{root, path, id}, bound, workers)
 	}()
 	return t, done, nil
 }
-func readDirectory(ctx context.Context, j job, out chan<- batch) {
+
+// chunk is one directory read: the entries it produced, any per-entry metadata
+// failures, and whether the directory is now exhausted. Per-entry failures are
+// reported without abandoning the rest of the directory.
+type chunk struct {
+	items []item
+	errs  []error
+	done  bool
+	err   error
+}
+
+// cancelEvery bounds how long a cancelled scan keeps making metadata calls.
+// Checking once per entry costs more than it saves; on a stalled network mount
+// each call can block, so the window cannot be much wider either.
+const cancelEvery = 64
+
+// countDirents sizes a chunk exactly, so a directory read never grows and
+// copies its entry slice. Walking the record lengths costs far less than the
+// metadata calls that follow.
+func countDirents(buf []byte) int {
+	n := 0
+	for off := 0; off < len(buf); {
+		reclen := direntReclen(buf, off)
+		if reclen < direntNameOffset || off+reclen > len(buf) {
+			break
+		}
+		off += reclen
+		n++
+	}
+	return n
+}
+
+func readDirectory(ctx context.Context, j job, out chan<- batch, r *dirReader) {
 	send := func(b batch) bool {
 		select {
 		case out <- b:
@@ -166,54 +219,34 @@ func readDirectory(ctx context.Context, j job, out chan<- batch) {
 		send(batch{job: j, err: err, done: true})
 		return
 	}
-	f := os.NewFile(uintptr(fd), j.path)
-	defer f.Close()
-	info, err := f.Stat()
-	if err != nil {
+	defer unix.Close(fd)
+	var st unix.Stat_t
+	if err := unix.Fstat(fd, &st); err != nil {
 		send(batch{job: j, err: err, done: true})
 		return
 	}
-	st := info.Sys().(*syscall.Stat_t)
 	if (identity{uint64(st.Dev), uint64(st.Ino)}) != j.id {
 		send(batch{job: j, err: fmt.Errorf("directory changed during scan"), done: true})
 		return
 	}
+	r.open(fd)
 	for {
 		if ctx.Err() != nil {
 			return
 		}
-		entries, readErr := f.ReadDir(256)
-		b := batch{job: j, items: make([]item, 0, len(entries))}
-		for _, e := range entries {
-			if ctx.Err() != nil {
+		c := r.read(ctx, fd)
+		for _, e := range c.errs {
+			if !send(batch{job: j, err: e}) {
 				return
 			}
-			// Metadata is anchored to the open directory; symlinks are not followed.
-			it, err := readMetadata(fd, e.Name())
-			if err != nil {
-				if !send(batch{job: j, err: fmt.Errorf("%s: %w", e.Name(), err)}) {
-					return
-				}
-				continue
-			}
-			mode := it.mode & unix.S_IFMT
-			if mode != unix.S_IFREG && mode != unix.S_IFDIR && mode != unix.S_IFLNK {
-				continue
-			}
-			b.items = append(b.items, it)
 		}
-		if readErr != nil {
-			b.done = true
-			if readErr != io.EOF {
-				b.err = readErr
-			}
-		}
-		if !send(b) || b.done {
+		if !send(batch{job: j, items: c.items, err: c.err, done: c.done}) || c.done {
 			return
 		}
 	}
 }
-func (t *Tree) run(ctx context.Context, root job, workers int) {
+
+func (t *Tree) run(ctx context.Context, root job, bound boundary, workers int) {
 	jobs := make(chan job)
 	results := make(chan batch, workers*2)
 	var wg sync.WaitGroup
@@ -221,6 +254,8 @@ func (t *Tree) run(ctx context.Context, root job, workers int) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			// Each worker keeps its own directory buffers for the whole scan.
+			r := newDirReader()
 			for {
 				select {
 				case <-ctx.Done():
@@ -229,7 +264,7 @@ func (t *Tree) run(ctx context.Context, root job, workers int) {
 					if !ok {
 						return
 					}
-					readDirectory(ctx, j, results)
+					readDirectory(ctx, j, results, r)
 				}
 			}
 		}()
@@ -276,7 +311,7 @@ func (t *Tree) run(ctx context.Context, root job, workers int) {
 			}
 			var allocated, apparent uint64
 			for _, it := range b.items {
-				if it.id.dev != root.id.dev {
+				if !bound.holds(it) {
 					t.stats.Skipped++
 					continue
 				}

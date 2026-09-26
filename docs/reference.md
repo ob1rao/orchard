@@ -96,7 +96,8 @@ For a quick test over SSH, use an interactive terminal (`ssh -t` if needed),
 then select the root filesystem `/` in Orchard. Allow the scan to complete,
 enter a large directory, and return with Backspace. Mouse navigation requires a
 terminal that forwards mouse events; keyboard navigation works independently.
-For a smaller initial scan or slower SD card:
+Orchard picks a worker count from the storage it is about to read, so this is
+rarely needed, but a slower SD card can still prefer fewer:
 
 ```sh
 "$HOME/.local/bin/orchard" --workers 2 "$HOME"

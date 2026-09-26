@@ -201,3 +201,28 @@ func BenchmarkScan(b *testing.B) {
 		}
 	}
 }
+
+// Cancellation is checked inside a directory read, not only between reads, so
+// a wide directory cannot keep a cancelled scan running.
+func TestCancellationStopsInsideAWideDirectory(t *testing.T) {
+	root := t.TempDir()
+	for i := 0; i < 20000; i++ {
+		if err := os.WriteFile(filepath.Join(root, fmt.Sprint(i)), nil, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	tree, done, err := Start(ctx, root, Options{1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	wait(t, done)
+	v := tree.Snapshot(tree.Root, false)
+	if !v.Stats.Cancelled {
+		t.Error("missing cancelled state")
+	}
+	if v.Stats.Files == 20000 {
+		t.Error("the scan ran to completion after being cancelled")
+	}
+}

@@ -22,7 +22,7 @@ func run() int {
 	apparent := flags.Bool("apparent", false, "show logical file lengths instead of allocated blocks")
 	unmounted := flags.Bool("unmounted", false, "include unmounted volumes in the disk picker")
 	headless := flags.Bool("scan", false, "scan a path and print a JSON summary without a TUI")
-	workers := flags.Int("workers", scan.DefaultWorkers(), "directory workers (1-64)")
+	workers := flags.Int("workers", 0, "directory workers (1-64; 0 tunes the count to the disk)")
 	ver := flags.Bool("version", false, "print version")
 	flags.Usage = func() {
 		fmt.Fprintln(flags.Output(), "Usage: orchard [options] [directory]\n\nLaunch without a directory to select a mounted disk.")
@@ -38,8 +38,8 @@ func run() int {
 		fmt.Println("orchard " + version)
 		return 0
 	}
-	if flags.NArg() > 1 || *workers < 1 || *workers > 64 {
-		fmt.Fprintln(os.Stderr, "orchard: supply at most one path and 1-64 workers")
+	if flags.NArg() > 1 || *workers < 0 || *workers > 64 {
+		fmt.Fprintln(os.Stderr, "orchard: supply at most one path and 0-64 workers")
 		return 2
 	}
 	path := flags.Arg(0)

@@ -1,6 +1,10 @@
-.PHONY: build test verify bench release clean
+.PHONY: build install uninstall test verify bench release clean
 build:
 	go build -trimpath -o bin/orchard ./cmd/orchard
+install:
+	./scripts/install-local.sh
+uninstall:
+	./scripts/install-local.sh --uninstall
 verify:
 	./scripts/verify.sh
 test: build

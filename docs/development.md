@@ -23,11 +23,10 @@ Metadata, not directory listing, is where a scan spends itself: one `statx` per
 entry accounts for roughly 90% of syscall time and two thirds of all CPU. Linux
 reads directories with `getdents64` into a per-worker 64 KiB buffer and skips
 the metadata call outright for sockets, FIFOs and device nodes, which `d_type`
-identifies for free. macOS uses `getattrlistbulk`, which returns metadata with
-the directory read and so removes the per-entry call altogether; its packed
-reply layout is an assumption rather than a contract, so the first directory of
-every process is checked field by field against `fstatat` and one disagreement
-retires the fast path for the rest of the run.
+identifies for free. macOS lists with `getdirentries` and still
+asks per entry; `getattrlistbulk` would return metadata with the listing and
+remove that call, but its packed reply reserves no size for a directory, so it
+needs a record layout this does not yet have.
 
 A scan stops at the filesystem it started on, which it decides by mount ID
 rather than by device number. Btrfs numbers every subvolume as its own device
@@ -95,9 +94,7 @@ Validated: Linux execution locally and in GitHub Actions; native macOS ARM64
 execution in GitHub Actions; scanner race tests; geometry invariants;
 keyboard/mouse navigation in a real PTY; resize and terminal restoration; fifteen
 installer scenarios; and compilation of all six targets. Btrfs subvolume
-accounting is covered by an opt-in loopback test alongside the mount test.
-`getattrlistbulk` is checked against `fstatat` entry by entry, but only where
-macOS can run it, so that test carries the darwin build. The storage picker's
+accounting is covered by an opt-in loopback test alongside the mount test. The storage picker's
 grouping, band heights, tile areas and mouse behaviour are covered by cell-buffer
 tests. `diskutil`'s APFS container report is parsed against plist fixtures only:
 per-volume usage inside a shared container still needs testing on real hardware. ARMv6 (ARM1176), ARMv7

@@ -810,9 +810,22 @@ func (a *App) drawTree(w, h int) {
 		if a.filter != "" {
 			msg = "No measurable matches"
 		}
-		if len(a.tiles) > 0 {
-			a.text(2, 8, a.listWidth-4, msg, base.Foreground(muted))
-		} else {
+		// Never write over the list: when it has rows, the message belongs
+		// in the map. A directory whose entries are dwarfed by the disk's
+		// free space draws only the free tile, and saying "no measurable
+		// entries" beside a list of them would be wrong as well as in the way.
+		switch {
+		case len(a.entries) == 0:
+			a.text(2, a.listTop, a.listWidth-4, msg, base.Foreground(muted))
+		case len(a.tiles) > 0:
+			free := a.tiles[0]
+			if st.Done && a.filter == "" {
+				msg = "Entries here are too small to draw beside disk free space · i hides it"
+			}
+			if free.H >= 5 && free.W >= 4 {
+				a.text(free.X+1, free.Y+3, free.W-2, msg, base.Background(tcell.NewHexColor(0x000000)).Foreground(muted))
+			}
+		default:
 			a.text(a.listWidth+3, 8, w-a.listWidth-6, msg, base.Foreground(muted))
 		}
 	}

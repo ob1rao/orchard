@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/ob1rao/orchard/internal/scan"
 	"github.com/ob1rao/orchard/internal/treemap"
 	"github.com/ob1rao/orchard/internal/volumes"
 )
@@ -227,5 +228,32 @@ func TestFreeSpaceDoesNotHideEmptyFilterMessage(t *testing.T) {
 	}
 	if !strings.Contains(text, "No measurable matches") || !strings.Contains(text, "Disk free") {
 		t.Fatal("empty filter must retain both its message and disk free tile")
+	}
+}
+
+// On a nearly empty disk every entry can be too small to draw beside the
+// free tile. The explanation must go in the map, not over a list row: it
+// used to land on the third entry, which is how tmpfs CI runners found it.
+func TestDwarfedEntriesKeepTheirListRows(t *testing.T) {
+	a := testApp(t)
+	for _, name := range []string{"b", "c"} {
+		a.tree.Root.Children = append(a.tree.Root.Children, &scan.Node{Name: name, Parent: a.tree.Root, Allocated: 4096, Apparent: 4096})
+	}
+	screen := newTestScreen(120, 32)
+	a.screen = screen
+	a.spaceReady = true
+	a.diskSpace = volumes.Space{Total: 1 << 50, Free: 1<<50 - 1<<20}
+	a.refresh()
+	a.draw()
+	if len(a.entries) != 3 {
+		t.Fatalf("fixture: %d entries", len(a.entries))
+	}
+	for i, e := range a.entries {
+		if row := string(screen.rows[a.listTop+i]); !strings.Contains(row, e.Name) {
+			t.Errorf("list row %d lost %q: %q", i, e.Name, row)
+		}
+	}
+	if !strings.Contains(screenText(a), "too small to draw beside disk free space") {
+		t.Errorf("no explanation for the empty map:\n%s", screenText(a))
 	}
 }

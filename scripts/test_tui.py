@@ -143,8 +143,12 @@ with tempfile.TemporaryDirectory(prefix="orchard-pty-") as td:
         terminal.send(b"\x1b")
         terminal.read(0.5)
         # SGR mouse: two clicks inside the largest tile, with release events.
+        # Hide disk free space first: on a nearly empty filesystem, such as a
+        # tmpfs /tmp, the free tile would fill the map and take the click.
+        terminal.send(b"i")
         terminal.send(b"\x1b[<0;50;10M\x1b[<0;50;10m\x1b[<0;50;10M\x1b[<0;50;10m")
         terminal.expect("deep-file-unique.dat")
+        terminal.send(b"i")
         terminal.send(b"f")
         terminal.expect("RECURSIVE SEARCH")
         terminal.send(b"viewer.log")

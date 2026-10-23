@@ -98,6 +98,11 @@ func TestLibraryOpensSnapshotOffline(t *testing.T) {
 	}
 	press(a, "Enter")
 	settle(t, a, 1)
+	// The scan resolves symlinks, and macOS keeps temporary directories
+	// behind one (/var is /private/var).
+	if resolved, err := filepath.EvalSymlinks(root); err == nil {
+		root = resolved
+	}
 	if a.top() != nil || a.snap == nil || a.tree.Root.Path() != root {
 		t.Fatalf("snapshot not opened: top %v snap %v", a.top(), a.snap)
 	}

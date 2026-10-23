@@ -51,7 +51,7 @@ version=$(git describe --tags --always --dirty 2>/dev/null || echo dev)
 case "$version" in *-dirty | dev) ;; *) version="$version-local" ;; esac
 
 printf 'Building %s with %s\n' "$version" "$(go version | cut -d' ' -f3)"
-go build -trimpath -ldflags="-X main.version=$version" -o bin/orchard ./cmd/orchard
+CGO_ENABLED=0 go build -trimpath -ldflags="-X main.version=$version" -o bin/orchard ./cmd/orchard
 [ -x bin/orchard ] || fail 'build produced no binary'
 
 mkdir -p "$DEST"

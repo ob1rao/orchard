@@ -1,6 +1,6 @@
 .PHONY: build install uninstall test verify bench release clean
 build:
-	go build -trimpath -o bin/orchard ./cmd/orchard
+	CGO_ENABLED=0 go build -trimpath -o bin/orchard ./cmd/orchard
 install:
 	./scripts/install-local.sh
 uninstall:

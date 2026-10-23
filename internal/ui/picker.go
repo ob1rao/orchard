@@ -242,5 +242,5 @@ func (a *App) drawPickerFooter(w, h int, physical, other []storageDisk) {
 	}
 	a.text(2, h-5, w-4, summary, base.Foreground(muted))
 	a.text(2, h-2, w-4, a.notice, base.Foreground(tcell.ColorYellow))
-	a.text(2, h-1, w-4, "↑↓ select · Enter/click explore · double-click a tile · u unmounted · r refresh · ? help · q quit", base.Foreground(accent))
+	a.text(2, h-1, w-4, "↑↓ select · Enter/click explore · u unmounted · r refresh · o snapshots · m machines · F query · ? help · q quit", base.Foreground(accent))
 }

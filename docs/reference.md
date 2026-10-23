@@ -385,3 +385,137 @@ and short terminals use a one-line wordmark. A small discovery indicator
 animates while storage information loads; there is no splash-screen delay.
 Arrow keys, Page Up/Down, Home/End, and mouse selection work throughout the
 grouped list.
+
+## Snapshots: save a scan and browse it offline
+
+A snapshot is a finished scan saved to disk: every entry's name, sizes and
+dates, plus where and when it was taken and how full the filesystem was. It
+holds no file contents. Snapshots are compact (about 10 bytes per entry; a
+150,000-entry `/usr` is 1.5 MB) and load in a fraction of a second.
+
+```sh
+orchard save /srv --label "before upgrade"   # scan without the TUI and save
+orchard --scan --save /srv                   # the same, printing the JSON summary too
+orchard snapshots                            # list the library, newest first
+orchard open web1                            # browse web1's newest snapshot offline
+orchard show web1~1 --json                   # summary of the one before it
+orchard delete 3f2c                          # remove by ID prefix
+```
+
+In the TUI, press **w** after a scan finishes to save it, or press **s** to
+stop a scan first and save the partial result. **o** opens the snapshot
+library from any screen: Enter opens a snapshot offline, Space marks
+snapshots, **c** compares, and pressing **x** twice deletes. An offline tree
+works like a live one, except that **v**/**t** are unavailable (file contents
+stay on the machine). Free space shows as it was at scan time, and **r**
+takes a fresh scan, over SSH if the snapshot came from another machine.
+
+A snapshot **reference** (REF) is any of the following:
+
+| Form | Meaning |
+| --- | --- |
+| `3f2c` | ID or unique ID prefix |
+| `web1` | the newest snapshot of machine `web1` |
+| `web1~2` | the second snapshot before that one |
+| `./file.orchard` | a snapshot file anywhere on disk |
+
+The library lives in `$ORCHARD_HOME`, else `$XDG_DATA_HOME/orchard`, else
+`~/.local/share/orchard`. Each snapshot is a single `.orchard` file under
+`snapshots/<machine>/`, so copying one file to another machine is enough to
+share it.
+
+## Archive and restore
+
+```sh
+orchard archive export --before 2026-01-01 --remove old.tar   # move old scans out
+orchard archive export --machine web1 web1.tar                # copy one machine's
+orchard archive list old.tar
+orchard archive import old.tar                                # load them back
+```
+
+An archive is a plain tar holding the snapshot files and a manifest. With no
+REF arguments and no filters, `export` takes every snapshot. `--remove`
+deletes the archived snapshots from the library only after the archive is
+fully written. `import` skips any snapshot whose ID is already present, so
+importing twice is harmless.
+
+## Compare two scans
+
+```sh
+orchard diff web1~1 web1           # TUI on a terminal
+orchard diff --text web1~1 web1    # report: totals, top-level changes, largest file changes
+orchard diff --json db1 db2        # two different machines
+```
+
+Paths are compared relative to each scan's root, so `/srv` on one machine
+can be compared with `/srv` on another, or `/home/a` with `/home/b`. In the TUI,
+the change map sizes tiles by how much each entry changed: red grew, green
+shrank. Entries are marked `+` added, `−` removed or `~` changed. Enter goes
+down a directory and ← comes back up. **u** shows or hides unchanged entries,
+and **a** switches between allocated and apparent sizes.
+
+From a live scan or an open snapshot, **c** compares it with the previous
+snapshot of the same directory on the same machine.
+
+## Remote machines over SSH
+
+```sh
+orchard remote ops@web1 /srv                      # one-off scan
+orchard machine add web1 ops@web1 --path /srv --path /home
+orchard remote web1                               # scans its first --path
+orchard remote --no-open web1 /var                # save only, for cron
+orchard machine list
+```
+
+Orchard runs your own `ssh` client, so `~/.ssh/config` aliases, agents, jump
+hosts and Tailscale SSH work unchanged. On the remote machine it looks for
+an `orchard` that supports remote scans, in `~/.local/bin` or on the PATH.
+If there is none and the remote machine has the same OS and architecture,
+Orchard uploads its own executable to `~/.cache/orchard/` there. For another
+architecture, install a release on the remote machine or pass
+`--upload path/to/orchard-for-that-arch`. The remote side scans headless,
+then streams the snapshot back, and Orchard saves it under the machine's
+name.
+
+Profiles accept `--port`, `--identity`, repeated `--option` (passed to
+`ssh -o`), `--binary` for a remote orchard elsewhere, and `--sudo`. With
+`--sudo`, the scan runs under `sudo -n`, which needs passwordless sudo.
+
+In the TUI, **m** lists this machine and every profile with its last scan.
+Enter scans the selected machine (it asks for the directory), **n** adds a
+profile and **e** edits one. **l** opens the newest snapshot, **o** lists the
+machine's snapshots, and pressing **x** twice removes the profile (its
+snapshots stay). TUI scans use `BatchMode`, so ssh must be able to connect
+without a password or host-key prompt. Run the scan once from the shell with
+`orchard remote NAME` if it cannot.
+
+## Query across machines
+
+```sh
+orchard query 'ext:iso size>1G'
+orchard query --group machine 'path:/var/log type:file'
+orchard query --all 'node_modules type:dir'          # every snapshot, not only the newest
+orchard query --json 'age>1y size>100M -ext:gz'
+```
+
+By default a query searches the newest snapshot of each machine and scanned
+directory. All terms must match:
+
+| Term | Matches |
+| --- | --- |
+| `report` | name contains *report* (any case) |
+| `re:^core\.\d+$` | name matches a regular expression |
+| `path:/var/log` | path below the scan root contains this; `*` `?` `[` make it a glob |
+| `ext:log` | file extension (`libfoo.so.1` has extension `.1`) |
+| `type:file`, `type:dir` | entry kind |
+| `size>1G`, `size<=500K` | size; K M G T P are powers of 1000, KiB MiB GiB powers of 1024 |
+| `modified<2024-01-01` | modification date |
+| `age>90d` | modified longer ago than this: d, w, m (30 days), y |
+| `machine:web1` | only that machine's snapshots |
+| `-term` | negates any term |
+
+Directories match by their total size, so a broad query can count the same
+bytes at several levels. Add `type:file` when summing. **F** in the TUI (or
+**f** in the library) opens the same query across machines. Results update
+as you type, Tab switches between the newest snapshots and all of them, and
+Enter opens the hit inside its snapshot.

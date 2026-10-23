@@ -37,6 +37,23 @@ To scan a particular folder:
 "$HOME/.local/bin/orchard" "$HOME/Downloads"
 ```
 
+## Remember, compare and scan other machines
+
+Save a scan, browse it later offline, and see exactly what changed since last time,
+on this machine or any other you can reach over SSH:
+
+```sh
+orchard save /srv                         # or press w after a scan in the TUI
+orchard machine add web1 ops@web1 --path /srv
+orchard remote web1                       # scans over ssh, saves, opens the result
+orchard diff web1~1 web1                  # what grew, shrank, appeared or vanished
+orchard query 'ext:iso size>1G'           # search every machine's latest snapshot
+orchard archive export --before 2026-01-01 --remove old.tar
+```
+
+In the TUI, `o` opens the snapshot library, `m` the machines list, and `F` a query across machines.
+See [Snapshots, comparisons and remote machines](docs/reference.md#snapshots-save-a-scan-and-browse-it-offline).
+
 ## Essential controls
 
 | Action | Control |
@@ -51,6 +68,8 @@ To scan a particular folder:
 | Filter this directory | / |
 | Show / hide dotfiles | . |
 | Show / hide disk-space summary | i |
+| Save scan / compare with previous | w / c |
+| Snapshots / machines / query all machines | o / m / F |
 | Help / quit | ? / q |
 
 If `~/.local/bin` is on your PATH, you can simply run `orchard`.

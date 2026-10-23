@@ -12,7 +12,9 @@ import (
 
 	"github.com/clipperhouse/displaywidth"
 	"github.com/gdamore/tcell/v3"
+	"github.com/ob1rao/orchard/internal/library"
 	"github.com/ob1rao/orchard/internal/scan"
+	"github.com/ob1rao/orchard/internal/snapshot"
 	"github.com/ob1rao/orchard/internal/treemap"
 	"github.com/ob1rao/orchard/internal/volumes"
 )
@@ -80,9 +82,21 @@ type App struct {
 	pickerTiles                    []pickerTile
 	lastPick                       string
 	brandFrame                     int
+	// Saved scans and the screens that work with them.
+	version     string
+	screens     []screen
+	async       chan func(*App)
+	lib         *library.Library
+	loaded      map[string]*snapshot.Snapshot
+	snap        *snapshot.Meta // set while browsing a saved snapshot offline
+	savedID     string         // the snapshot the current tree is saved as
+	scanStarted time.Time
+	busy        string
+	lastRow     string
 }
 
-func Run(ctx context.Context, path string, apparent, showUnmounted bool, opt scan.Options) error {
+func Run(ctx context.Context, cfg Config) error {
+	path, apparent, showUnmounted, opt := cfg.Path, cfg.Apparent, cfg.Unmounted, cfg.Scan
 	s, err := tcell.NewScreen()
 	if err != nil {
 		return err
@@ -94,9 +108,21 @@ func Run(ctx context.Context, path string, apparent, showUnmounted bool, opt sca
 	s.SetStyle(base)
 	s.HideCursor()
 	s.EnableMouse(tcell.MouseButtonEvents)
-	a := &App{screen: s, picker: true, apparent: apparent, opt: opt, showUnmounted: showUnmounted}
+	a := &App{screen: s, picker: true, apparent: apparent, opt: opt, showUnmounted: showUnmounted, version: cfg.Version, async: make(chan func(*App), 64)}
 	defer a.stop()
 	a.reloadDisks(ctx)
+	switch {
+	case cfg.Compare[0] != nil:
+		before, after := cfg.Compare[0], cfg.Compare[1]
+		a.openSnapshot(after)
+		a.push(newCompare(before.Meta, after.Meta, before.Tree, after.Tree))
+	case cfg.Open != nil:
+		a.openSnapshot(cfg.Open)
+	case cfg.Screen == "library":
+		a.openLibraryScreen("")
+	case cfg.Screen == "machines":
+		a.openMachinesScreen()
+	}
 	defer func() {
 		if a.diskCancel != nil {
 			a.diskCancel()
@@ -123,6 +149,9 @@ func Run(ctx context.Context, path string, apparent, showUnmounted bool, opt sca
 		case update := <-a.findResults:
 			a.acceptFind(update)
 			a.draw()
+		case apply := <-a.async:
+			apply(a)
+			a.draw()
 		case <-tick.C:
 			a.pollSpace(ctx, time.Now())
 			redraw := false
@@ -135,6 +164,12 @@ func Run(ctx context.Context, path string, apparent, showUnmounted bool, opt sca
 				redraw = true
 			}
 			if a.pollFind() {
+				redraw = true
+			}
+			if t, ok := a.top().(interface{ tick(*App) bool }); ok && t.tick(a) {
+				redraw = true
+			}
+			if _, ok := a.top().(*remoteScreen); ok {
 				redraw = true
 			}
 			if redraw {
@@ -180,6 +215,8 @@ func (a *App) start(ctx context.Context, path string) error {
 		return err
 	}
 	a.mapPages = nil
+	a.snap, a.savedID, a.screens = nil, "", nil
+	a.scanStarted = time.Now()
 	a.spaceSerial++
 	a.spaceReady, a.spaceLoading = false, false
 	a.spaceNext = time.Time{}
@@ -249,6 +286,8 @@ func (a *App) back(ctx context.Context) {
 	switch {
 	case a.current != nil && a.current.Parent != nil:
 		a.enter(a.current.Parent)
+	case a.snap != nil:
+		a.openLibraryScreen("")
 	case !a.picker:
 		a.showPicker(ctx)
 	}
@@ -301,6 +340,19 @@ func (a *App) key(ctx context.Context, e *tcell.EventKey) bool {
 	}
 	if a.find != nil {
 		a.findKey(e)
+		return false
+	}
+	if top := a.top(); top != nil {
+		if e.Key() == tcell.KeyRune && !top.typing() {
+			switch e.Str() {
+			case "q":
+				return true
+			case "?":
+				a.help = true
+				return false
+			}
+		}
+		top.key(a, ctx, e)
 		return false
 	}
 	if a.searching {
@@ -394,7 +446,25 @@ func (a *App) key(ctx context.Context, e *tcell.EventKey) bool {
 				a.openFind()
 			}
 		case "v", "t":
-			a.openViewer(e.Str() == "t")
+			if a.snap != nil && !a.picker {
+				a.notice = "File contents are not part of a snapshot; they stay on " + a.snap.Machine + "."
+			} else {
+				a.openViewer(e.Str() == "t")
+			}
+		case "w":
+			if !a.picker {
+				a.saveCurrent()
+			}
+		case "c":
+			if !a.picker {
+				a.compareWithPrevious()
+			}
+		case "o":
+			a.openLibraryScreen("")
+		case "m":
+			a.openMachinesScreen()
+		case "F":
+			a.openQueryScreen("")
 		case "q":
 			return true
 		case "?":
@@ -444,6 +514,8 @@ func (a *App) key(ctx context.Context, e *tcell.EventKey) bool {
 		case "r":
 			if a.picker {
 				a.reloadDisks(ctx)
+			} else if a.snap != nil {
+				a.rescanSnapshot(ctx)
 			} else {
 				_ = a.start(ctx, a.tree.Root.Path())
 			}
@@ -468,6 +540,10 @@ func (a *App) mouse(ctx context.Context, e *tcell.EventMouse) {
 	}
 	if a.find != nil {
 		a.findMouse(e)
+		return
+	}
+	if top := a.top(); top != nil && !a.help {
+		top.mouse(a, ctx, e)
 		return
 	}
 	if a.help || a.searching {
@@ -607,7 +683,7 @@ func (a *App) draw() {
 	}
 	// The picker carries the wordmark in its own splash, except when an
 	// overlay covers it: no screen should be left unbranded.
-	if !a.picker || a.mount != nil || a.help {
+	if !a.picker || a.mount != nil || a.help || a.top() != nil {
 		a.text(2, 0, w-4, brandLine(), base.Foreground(accent).Bold(true))
 	}
 	if a.mount != nil {
@@ -616,6 +692,8 @@ func (a *App) draw() {
 		a.drawViewer(w, h)
 	} else if a.find != nil {
 		a.drawFind(w, h)
+	} else if top := a.top(); top != nil {
+		top.draw(a, w, h)
 	} else if a.picker {
 		a.drawPicker(w, h)
 	} else {
@@ -623,6 +701,9 @@ func (a *App) draw() {
 	}
 	if a.help {
 		a.drawHelp(w, h)
+	}
+	if a.busy != "" {
+		a.text(w-len([]rune(a.busy))-3, 0, len([]rune(a.busy))+1, a.busy, base.Foreground(tcell.ColorYellow))
 	}
 	s.Show()
 }
@@ -638,6 +719,14 @@ func (a *App) drawTree(w, h int) {
 		if st.Cancelled {
 			state = "STOPPED · partial results"
 		}
+	}
+	if a.snap != nil {
+		state = "SNAPSHOT " + snapshotTitle(*a.snap)
+		if st.Cancelled {
+			state += " · partial"
+		}
+	} else if a.savedID != "" {
+		state += " · saved " + a.savedID
 	}
 	mode := "allocated"
 	if a.apparent {
@@ -754,7 +843,11 @@ func (a *App) drawTree(w, h int) {
 		status = fmt.Sprintf("Hidden: %s (.) · Filter: /%s (Esc clears)", hidden, a.filter)
 	}
 	a.text(2, h-3, w-4, status, base.Foreground(muted))
-	a.text(2, h-2, w-4, "Space treemap · Enter open · ← back · i disk space · f find · v view · t tail · ? help · q quit", base.Foreground(accent))
+	keys := "Space treemap · Enter open · ← back · f find · v view · w save · c compare · o snapshots · m machines · ? help"
+	if a.snap != nil {
+		keys = "Space treemap · Enter open · ← back · f find · c compare with previous · r rescan · o snapshots · m machines · ? help"
+	}
+	a.text(2, h-2, w-4, keys, base.Foreground(accent))
 }
 func (a *App) drawTile(t treemap.Tile, e scan.Entry, selected, wrapName bool) {
 	key := strings.ToLower(filepath.Ext(e.Name))
@@ -812,7 +905,10 @@ func (a *App) drawTile(t treemap.Tile, e scan.Entry, selected, wrapName bool) {
 }
 func (a *App) drawHelp(w, h int) {
 	a.screen.FillArea(1, 1, w-2, h-2, ' ', base)
-	lines := []string{"KEYBOARD & MOUSE", "", "↑/↓ or j/k   Select an entry; wheel scrolls", "Enter / l   Open selected directory", "← / h / Backspace   Parent directory; at the scan root, back to the disk picker", "g   Return to the scan root", "Space   Expand treemap / next smaller entries     b   Previous treemap view", "Click   Select tile or list entry", "Double-click   Open directory; right-click goes back", "/   Filter current directory     f / Ctrl-F   Search disk", ". / H   Show or hide dotfiles and dot directories (default: shown)", "v   View selected file     t   View from the end (no follow)", "a   Toggle allocated bytes / apparent file sizes", "i   Show/hide disk free space and unaccounted usage estimate", "s   Stop scan and browse partial results", "r   Rescan disk     d   Choose another disk", "u   In disk picker: show/hide unmounted volumes", "In the disk picker, a map tile is one volume inside its physical disk;", "click a tile to select it and double-click to explore it.", "Home / End / PgUp / PgDn   Navigate the list", "q / Ctrl-C   Quit     Ctrl-L   Redraw", "", "Other usage includes inaccessible data, overhead and data outside the scan.", "Its byte count is an estimate, not a measure of permission errors.", "Tiles represent immediate children, ordered by size.", "Directories open into another treemap. Tiny entries stay in the list.", "Symlinks are not followed; other filesystems are skipped.", "Hard links count once; black tiles show disk free space (i toggles).", "", "Press any key to close"}
+	lines := []string{"KEYBOARD & MOUSE", "", "↑/↓ or j/k   Select an entry; wheel scrolls", "Enter / l   Open selected directory", "← / h / Backspace   Parent directory; at the scan root, back to the disk picker", "g   Return to the scan root", "Space   Expand treemap / next smaller entries     b   Previous treemap view", "Click   Select tile or list entry", "Double-click   Open directory; right-click goes back", "/   Filter current directory     f / Ctrl-F   Search disk", ". / H   Show or hide dotfiles and dot directories (default: shown)", "v   View selected file     t   View from the end (no follow)", "a   Toggle allocated bytes / apparent file sizes", "i   Show/hide disk free space and unaccounted usage estimate", "s   Stop scan and browse partial results", "r   Rescan disk     d   Choose another disk", "u   In disk picker: show/hide unmounted volumes",
+		"w   Save this scan as a snapshot     c   Compare with the previous snapshot",
+		"o   Snapshot library (open offline, Space marks two, c compares, x deletes)",
+		"m   Machines: scan other hosts over SSH     F   Query snapshots across machines", "In the disk picker, a map tile is one volume inside its physical disk;", "click a tile to select it and double-click to explore it.", "Home / End / PgUp / PgDn   Navigate the list", "q / Ctrl-C   Quit     Ctrl-L   Redraw", "", "Other usage includes inaccessible data, overhead and data outside the scan.", "Its byte count is an estimate, not a measure of permission errors.", "Tiles represent immediate children, ordered by size.", "Directories open into another treemap. Tiny entries stay in the list.", "Symlinks are not followed; other filesystems are skipped.", "Hard links count once; black tiles show disk free space (i toggles).", "", "Press any key to close"}
 	for i, line := range lines {
 		if i+2 >= h-2 {
 			break

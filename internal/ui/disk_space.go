@@ -19,7 +19,7 @@ type spaceUpdate struct {
 // Only one request per scan is in flight. Statfs can block on remote storage;
 // keep it outside rendering and the event loop, including after scanning ends.
 func (a *App) pollSpace(ctx context.Context, now time.Time) {
-	if a.tree == nil || a.hideDiskSpace || a.spaceLoading || now.Before(a.spaceNext) {
+	if a.tree == nil || a.snap != nil || a.hideDiskSpace || a.spaceLoading || now.Before(a.spaceNext) {
 		return
 	}
 	if a.spaceResults == nil {
@@ -80,6 +80,9 @@ func (a *App) drawDiskSpace(w int) {
 				text = fmt.Sprintf("Free %s · Other %s · i", Bytes(a.diskSpace.Free), value)
 			}
 		}
+	}
+	if a.snap != nil {
+		text = "At scan time · " + text
 	}
 	a.text(2, 1, w-4, text, base.Foreground(accent))
 }
